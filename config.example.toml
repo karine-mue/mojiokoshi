@@ -1,0 +1,30 @@
+# 入力音声ファイル
+# 空なら data_dir の中で更新日時が最新の音声ファイルを読む
+audio_file = ""
+
+# 例:
+# audio_file = "l0opback_ja.m4a"
+# audio_file = "l0opback_en.m4a"
+
+data_dir = "data"
+output_dir = "output"
+log_dir = "log"
+stats_dir = "stats"
+db_file = "transcribe_runs.sqlite3"
+
+# 実験識別
+experiment_name = "l0opback_lang_compare"
+run_label = "example_run"
+
+# ja / en / unknown
+source_language = "unknown"
+
+model = "medium"
+device = "cuda"
+compute_type = "float16"
+
+# auto / ja / en
+language = "auto"
+
+beam_size = 5
+vad_filter = true

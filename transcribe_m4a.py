@@ -4,10 +4,15 @@ import argparse
 import json
 import logging
 import re
+import shutil
+import sqlite3
 import sys
+import time
+import tomllib
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
+
 from faster_whisper import WhisperModel
 
 
@@ -22,7 +27,7 @@ def safe_stem(name: str) -> str:
     name = name.strip()
     name = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "_", name)
     name = re.sub(r"\s+", "_", name)
-    return name or "audio"
+    return name or "unknown"
 
 
 def format_timestamp_srt(seconds: float) -> str:
@@ -36,18 +41,50 @@ def format_timestamp_srt(seconds: float) -> str:
     return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
 
 
+def load_config(config_path: Path) -> dict[str, Any]:
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"config file not found: {config_path}\n"
+            f"create config.toml first."
+        )
+
+    with config_path.open("rb") as f:
+        return tomllib.load(f)
+
+
+def resolve_project_path(project_root: Path, value: str | Path) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    return project_root / path
+
+
 def find_latest_audio(data_dir: Path) -> Path:
+    if not data_dir.exists():
+        raise FileNotFoundError(f"data_dir does not exist: {data_dir}")
+
     files = [
-        p for p in data_dir.iterdir()
+        p
+        for p in data_dir.iterdir()
         if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
     ]
+
     if not files:
-        raise FileNotFoundError(f"音声ファイルが見つかりません: {data_dir}")
-    return max(files, key=lambda p: p.stat().st_mtime)
+        raise FileNotFoundError(f"audio file not found under: {data_dir}")
+
+    return max(files, key=lambda p: p.stat().st_mtime).resolve()
 
 
 def resolve_audio_path(input_name: str | None, data_dir: Path) -> Path:
-    if not input_name:
+    """
+    input_name が空なら data_dir の最新音声。
+    input_name があれば、
+      1. 絶対パス
+      2. カレント相対
+      3. data_dir 配下
+    の順で探す。
+    """
+    if input_name is None or input_name.strip() == "":
         return find_latest_audio(data_dir)
 
     raw = Path(input_name).expanduser()
@@ -55,18 +92,16 @@ def resolve_audio_path(input_name: str | None, data_dir: Path) -> Path:
     if raw.is_absolute() and raw.exists():
         return raw.resolve()
 
-    # まずカレントから見て存在する場合
     if raw.exists():
         return raw.resolve()
 
-    # 次に data/ 配下として見る
     candidate = data_dir / input_name
     if candidate.exists():
         return candidate.resolve()
 
     raise FileNotFoundError(
-        f"音声ファイルが見つかりません: {input_name}\n"
-        f"確認先: {raw.resolve()} / {candidate.resolve()}"
+        f"audio file not found: {input_name}\n"
+        f"checked: {raw.resolve()} / {candidate.resolve()}"
     )
 
 
@@ -74,6 +109,7 @@ def setup_logger(log_path: Path) -> logging.Logger:
     logger = logging.getLogger("transcribe")
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
+    logger.propagate = False
 
     formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(message)s",
@@ -91,22 +127,317 @@ def setup_logger(log_path: Path) -> logging.Logger:
     return logger
 
 
-def write_outputs(
+def validate_config(config: dict[str, Any]) -> None:
+    device = config.get("device", "cpu")
+    if device not in {"cpu", "cuda"}:
+        raise ValueError(f"device must be cpu or cuda: {device}")
+
+    language = config.get("language", "auto")
+    if language not in {"auto", "ja", "en"}:
+        raise ValueError(f"language must be auto, ja, or en: {language}")
+
+    source_language = config.get("source_language", "unknown")
+    if source_language not in {"ja", "en", "unknown"}:
+        raise ValueError(f"source_language must be ja, en, or unknown: {source_language}")
+
+    beam_size = config.get("beam_size", 5)
+    if not isinstance(beam_size, int) or beam_size < 1:
+        raise ValueError(f"beam_size must be positive integer: {beam_size}")
+
+    vad_filter = config.get("vad_filter", True)
+    if not isinstance(vad_filter, bool):
+        raise ValueError(f"vad_filter must be true or false: {vad_filter}")
+
+
+def make_run_id(timestamp: str, run_label: str, audio_stem: str) -> str:
+    label = safe_stem(run_label) if run_label.strip() else "run"
+    stem = safe_stem(audio_stem)
+    return f"{timestamp}_{label}_{stem}"
+
+
+def init_db(db_path: Path) -> None:
+    """
+    stats用SQLiteを初期化する。
+    既存DBに列が足りない場合は追加する。
+    """
+    db_path.parent.mkdir(exist_ok=True)
+
+    required_columns: dict[str, str] = {
+        "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "run_id": "TEXT",
+        "run_started_at": "TEXT",
+        "run_finished_at": "TEXT",
+        "elapsed_sec": "REAL",
+        "experiment_name": "TEXT",
+        "run_label": "TEXT",
+        "config_path": "TEXT",
+        "config_snapshot": "TEXT",
+        "audio_path": "TEXT",
+        "audio_file": "TEXT",
+        "audio_stem": "TEXT",
+        "audio_size_bytes": "INTEGER",
+        "audio_mtime": "TEXT",
+        "source_language": "TEXT",
+        "model": "TEXT",
+        "device": "TEXT",
+        "compute_type": "TEXT",
+        "language_arg": "TEXT",
+        "detected_language": "TEXT",
+        "language_probability": "REAL",
+        "duration_sec": "REAL",
+        "segment_count": "INTEGER",
+        "transcript_chars": "INTEGER",
+        "vad_filter": "INTEGER",
+        "beam_size": "INTEGER",
+        "output_dir": "TEXT",
+        "output_txt": "TEXT",
+        "output_srt": "TEXT",
+        "output_json": "TEXT",
+        "log_path": "TEXT",
+        "status": "TEXT",
+        "error_message": "TEXT",
+    }
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS transcribe_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                run_id TEXT,
+
+                run_started_at TEXT,
+                run_finished_at TEXT,
+                elapsed_sec REAL,
+
+                experiment_name TEXT,
+                run_label TEXT,
+
+                config_path TEXT,
+                config_snapshot TEXT,
+
+                audio_path TEXT,
+                audio_file TEXT,
+                audio_stem TEXT,
+                audio_size_bytes INTEGER,
+                audio_mtime TEXT,
+                source_language TEXT,
+
+                model TEXT,
+                device TEXT,
+                compute_type TEXT,
+                language_arg TEXT,
+                detected_language TEXT,
+                language_probability REAL,
+
+                duration_sec REAL,
+                segment_count INTEGER,
+                transcript_chars INTEGER,
+
+                vad_filter INTEGER,
+                beam_size INTEGER,
+
+                output_dir TEXT,
+                output_txt TEXT,
+                output_srt TEXT,
+                output_json TEXT,
+                log_path TEXT,
+
+                status TEXT,
+                error_message TEXT
+            )
+            """
+        )
+
+        existing_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(transcribe_runs)").fetchall()
+        }
+
+        for column_name, column_type in required_columns.items():
+            if column_name == "id":
+                continue
+            if column_name not in existing_columns:
+                conn.execute(
+                    f"ALTER TABLE transcribe_runs ADD COLUMN {column_name} {column_type}"
+                )
+
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_transcribe_runs_run_id
+            ON transcribe_runs (run_id)
+            WHERE run_id IS NOT NULL
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_transcribe_runs_experiment
+            ON transcribe_runs (experiment_name, run_label)
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_transcribe_runs_audio_language
+            ON transcribe_runs (audio_file, source_language, language_arg)
+            """
+        )
+
+
+def insert_run_stat(
     *,
-    segments: Iterable,
-    info,
+    db_path: Path,
+    run_id: str,
+    run_started_at: str,
+    run_finished_at: str,
+    elapsed_sec: float,
+    experiment_name: str,
+    run_label: str,
+    config_path: Path,
+    config_snapshot: Path | None,
     audio_path: Path,
-    output_prefix: Path,
+    source_language: str,
     model_size: str,
     device: str,
     compute_type: str,
-    logger: logging.Logger,
+    language_arg: str,
+    detected_language: str | None,
+    language_probability: float | None,
+    duration_sec: float | None,
+    segment_count: int | None,
+    transcript_chars: int | None,
+    vad_filter: bool,
+    beam_size: int,
+    run_output_dir: Path | None,
+    txt_path: Path | None,
+    srt_path: Path | None,
+    json_path: Path | None,
+    log_path: Path | None,
+    status: str,
+    error_message: str | None,
 ) -> None:
-    txt_path = output_prefix.with_suffix(".txt")
-    srt_path = output_prefix.with_suffix(".srt")
-    json_path = output_prefix.with_suffix(".json")
+    stat = audio_path.stat() if audio_path.exists() else None
+    audio_size_bytes = stat.st_size if stat else None
+    audio_mtime = (
+        datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds")
+        if stat
+        else None
+    )
 
-    all_segments: list[dict] = []
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO transcribe_runs (
+                run_id,
+
+                run_started_at,
+                run_finished_at,
+                elapsed_sec,
+
+                experiment_name,
+                run_label,
+
+                config_path,
+                config_snapshot,
+
+                audio_path,
+                audio_file,
+                audio_stem,
+                audio_size_bytes,
+                audio_mtime,
+                source_language,
+
+                model,
+                device,
+                compute_type,
+                language_arg,
+                detected_language,
+                language_probability,
+
+                duration_sec,
+                segment_count,
+                transcript_chars,
+
+                vad_filter,
+                beam_size,
+
+                output_dir,
+                output_txt,
+                output_srt,
+                output_json,
+                log_path,
+
+                status,
+                error_message
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+
+                run_started_at,
+                run_finished_at,
+                elapsed_sec,
+
+                experiment_name,
+                run_label,
+
+                str(config_path),
+                str(config_snapshot) if config_snapshot else None,
+
+                str(audio_path),
+                audio_path.name,
+                audio_path.stem,
+                audio_size_bytes,
+                audio_mtime,
+                source_language,
+
+                model_size,
+                device,
+                compute_type,
+                language_arg,
+                detected_language,
+                language_probability,
+
+                duration_sec,
+                segment_count,
+                transcript_chars,
+
+                int(vad_filter),
+                beam_size,
+
+                str(run_output_dir) if run_output_dir else None,
+                str(txt_path) if txt_path else None,
+                str(srt_path) if srt_path else None,
+                str(json_path) if json_path else None,
+                str(log_path) if log_path else None,
+
+                status,
+                error_message,
+            ),
+        )
+
+
+def write_outputs(
+    *,
+    run_id: str,
+    segments: Iterable,
+    info: Any,
+    audio_path: Path,
+    run_output_dir: Path,
+    model_size: str,
+    device: str,
+    compute_type: str,
+    language_arg: str,
+    source_language: str,
+    logger: logging.Logger,
+) -> dict[str, Any]:
+    txt_path = run_output_dir / "transcript.txt"
+    srt_path = run_output_dir / "transcript.srt"
+    json_path = run_output_dir / "result.json"
+
+    all_segments: list[dict[str, Any]] = []
 
     logger.info("writing txt: %s", txt_path)
     logger.info("writing srt: %s", srt_path)
@@ -133,11 +464,16 @@ def write_outputs(
                 logger.info("processed segments: %d", i)
 
     meta = {
+        "run_id": run_id,
         "audio": str(audio_path),
+        "audio_file": audio_path.name,
+        "audio_stem": audio_path.stem,
         "model": model_size,
         "device": device,
         "compute_type": compute_type,
-        "language": info.language,
+        "source_language": source_language,
+        "language_arg": language_arg,
+        "detected_language": info.language,
         "language_probability": info.language_probability,
         "duration": info.duration,
         "segments": all_segments,
@@ -155,95 +491,123 @@ def write_outputs(
     logger.info("srt : %s", srt_path)
     logger.info("json: %s", json_path)
 
+    return {
+        "txt_path": txt_path,
+        "srt_path": srt_path,
+        "json_path": json_path,
+        "segment_count": len(all_segments),
+        "transcript_chars": sum(len(seg["text"]) for seg in all_segments),
+    }
+
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Transcribe audio files using faster-whisper."
+    )
+    parser.add_argument(
+        "--config",
+        default="config.toml",
+        help="config file path. default: config.toml",
+    )
+
+    args = parser.parse_args()
+
     logger: logging.Logger | None = None
 
     try:
-        parser = argparse.ArgumentParser(
-            description="Transcribe audio files under data/ using faster-whisper."
-        )
-
-        parser.add_argument(
-            "audio",
-            nargs="?",
-            help="音声ファイル名。省略時は data/ の最新音声ファイルを使う。",
-        )
-        parser.add_argument(
-            "--model",
-            default="medium",
-            help="Whisper model size. examples: small, medium, large-v3",
-        )
-        parser.add_argument(
-            "--device",
-            default="cuda",
-            choices=["cpu", "cuda"],
-            help="cpu or cuda",
-        )
-        parser.add_argument(
-            "--compute-type",
-            default=None,
-            help="cpuなら int8、cudaなら float16 など。省略時は自動。",
-        )
-        parser.add_argument(
-            "--beam-size",
-            type=int,
-            default=5,
-        )
-        parser.add_argument(
-            "--no-vad",
-            action="store_true",
-            help="VAD filterを使わない。",
-        )
-
-        args = parser.parse_args()
+        started_monotonic = time.monotonic()
+        run_started_at = datetime.now().isoformat(timespec="seconds")
 
         project_root = Path(__file__).resolve().parent
-        data_dir = project_root / "data"
-        output_dir = project_root / "output"
-        log_dir = project_root / "log"
+
+        config_path = Path(args.config).expanduser()
+        if not config_path.is_absolute():
+            config_path = project_root / config_path
+
+        config = load_config(config_path)
+        validate_config(config)
+
+        data_dir = resolve_project_path(project_root, config.get("data_dir", "data"))
+        output_dir = resolve_project_path(project_root, config.get("output_dir", "output"))
+        log_dir = resolve_project_path(project_root, config.get("log_dir", "log"))
+        stats_dir = resolve_project_path(project_root, config.get("stats_dir", "stats"))
 
         data_dir.mkdir(exist_ok=True)
         output_dir.mkdir(exist_ok=True)
         log_dir.mkdir(exist_ok=True)
+        stats_dir.mkdir(exist_ok=True)
 
-        audio_path = resolve_audio_path(args.audio, data_dir)
+        audio_name = config.get("audio_file", "")
+        audio_path = resolve_audio_path(audio_name, data_dir)
+
+        experiment_name = str(config.get("experiment_name", ""))
+        run_label = str(config.get("run_label", ""))
+        source_language = str(config.get("source_language", "unknown"))
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base = safe_stem(audio_path.stem)
-        output_prefix = output_dir / f"{timestamp}_{base}"
-        log_path = log_dir / f"{timestamp}_{base}.log"
+        run_id = make_run_id(timestamp, run_label, audio_path.stem)
 
+        run_output_dir = output_dir / run_id
+        run_output_dir.mkdir(exist_ok=False)
+
+        log_path = log_dir / f"{run_id}.log"
         logger = setup_logger(log_path)
 
-        compute_type = args.compute_type
-        if compute_type is None:
-            compute_type = "float16" if args.device == "cuda" else "int8"
+        config_snapshot_path = run_output_dir / "config_snapshot.toml"
+        shutil.copyfile(config_path, config_snapshot_path)
 
+        db_file = str(config.get("db_file", "transcribe_runs.sqlite3"))
+        db_path = stats_dir / db_file
+        init_db(db_path)
+
+        model_size = str(config.get("model", "medium"))
+        device = str(config.get("device", "cpu"))
+
+        compute_type_value = config.get("compute_type", "")
+        if compute_type_value is None or str(compute_type_value).strip() == "":
+            compute_type = "float16" if device == "cuda" else "int8"
+        else:
+            compute_type = str(compute_type_value)
+
+        language_arg = str(config.get("language", "auto"))
+        language = None if language_arg == "auto" else language_arg
+
+        beam_size = int(config.get("beam_size", 5))
+        vad_filter = bool(config.get("vad_filter", True))
+
+        logger.info("run_id      : %s", run_id)
+        logger.info("config      : %s", config_path)
+        logger.info("config_snap : %s", config_snapshot_path)
         logger.info("project_root: %s", project_root)
+        logger.info("experiment : %s", experiment_name)
+        logger.info("run_label  : %s", run_label)
+        logger.info("source_lang: %s", source_language)
         logger.info("audio       : %s", audio_path)
-        logger.info("model       : %s", args.model)
-        logger.info("device      : %s", args.device)
+        logger.info("model       : %s", model_size)
+        logger.info("device      : %s", device)
         logger.info("compute_type: %s", compute_type)
-        logger.info("beam_size   : %s", args.beam_size)
-        logger.info("vad_filter  : %s", not args.no_vad)
-        logger.info("output_base : %s", output_prefix)
+        logger.info("language_arg: %s", language_arg)
+        logger.info("language    : %s", language if language is not None else "auto")
+        logger.info("beam_size   : %s", beam_size)
+        logger.info("vad_filter  : %s", vad_filter)
+        logger.info("output_dir  : %s", run_output_dir)
         logger.info("log         : %s", log_path)
+        logger.info("stats_db    : %s", db_path)
 
         logger.info("loading model...")
         model = WhisperModel(
-            args.model,
-            device=args.device,
+            model_size,
+            device=device,
             compute_type=compute_type,
         )
 
         logger.info("transcribing...")
         segments, info = model.transcribe(
             str(audio_path),
-            language="ja",
+            language=language,
             task="transcribe",
-            vad_filter=not args.no_vad,
-            beam_size=args.beam_size,
+            vad_filter=vad_filter,
+            beam_size=beam_size,
         )
 
         logger.info(
@@ -253,21 +617,73 @@ def main() -> None:
             info.duration,
         )
 
-        write_outputs(
+        if info.language_probability < 0.80:
+            logger.warning(
+                "language detection confidence is low: language=%s probability=%.4f",
+                info.language,
+                info.language_probability,
+            )
+
+        output_result = write_outputs(
+            run_id=run_id,
             segments=segments,
             info=info,
             audio_path=audio_path,
-            output_prefix=output_prefix,
-            model_size=args.model,
-            device=args.device,
+            run_output_dir=run_output_dir,
+            model_size=model_size,
+            device=device,
             compute_type=compute_type,
+            language_arg=language_arg,
+            source_language=source_language,
             logger=logger,
         )
+
+        run_finished_at = datetime.now().isoformat(timespec="seconds")
+        elapsed_sec = time.monotonic() - started_monotonic
+
+        insert_run_stat(
+            db_path=db_path,
+            run_id=run_id,
+            run_started_at=run_started_at,
+            run_finished_at=run_finished_at,
+            elapsed_sec=elapsed_sec,
+            experiment_name=experiment_name,
+            run_label=run_label,
+            config_path=config_path,
+            config_snapshot=config_snapshot_path,
+            audio_path=audio_path,
+            source_language=source_language,
+            model_size=model_size,
+            device=device,
+            compute_type=compute_type,
+            language_arg=language_arg,
+            detected_language=info.language,
+            language_probability=info.language_probability,
+            duration_sec=info.duration,
+            segment_count=output_result["segment_count"],
+            transcript_chars=output_result["transcript_chars"],
+            vad_filter=vad_filter,
+            beam_size=beam_size,
+            run_output_dir=run_output_dir,
+            txt_path=output_result["txt_path"],
+            srt_path=output_result["srt_path"],
+            json_path=output_result["json_path"],
+            log_path=log_path,
+            status="success",
+            error_message=None,
+        )
+
+        logger.info("elapsed_sec : %.2f", elapsed_sec)
+        logger.info("sqlite stat inserted: %s", db_path)
 
     except Exception:
         if logger is not None:
             logger.exception("fatal error")
         else:
+            logging.basicConfig(
+                level=logging.INFO,
+                format="%(asctime)s [%(levelname)s] %(message)s",
+            )
             logging.exception("fatal error before logger setup")
         raise
 

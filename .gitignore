@@ -12,18 +12,31 @@ __pycache__/
 venv/
 .env
 
+# local config
+config.toml
+config_*.toml
+!config.example.toml
+
 # ASR input / output / logs
 data/*
 output/*
 log/*
 
-# keep directories
 !data/.gitkeep
 !output/.gitkeep
 !log/.gitkeep
 
-# OS / editor
+# SQLite stats
+stats/*
+!stats/.gitkeep
+
+# query samples
+!query/
+!query/**/*.sql
+
+# Windows / editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+*:Zone.Identifier
