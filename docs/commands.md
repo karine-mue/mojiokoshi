@@ -20,6 +20,22 @@ deactivate
 
 ---
 
+## install
+
+CPU実行の基本構成。
+
+```bash
+pip install -r requirements.txt
+```
+
+GPU/CUDAを使う端末だけ追加。
+
+```bash
+pip install -r requirements-cuda.txt
+```
+
+---
+
 ## 実行
 
 通常実行。
@@ -28,13 +44,19 @@ deactivate
 python transcribe_m4a.py
 ```
 
+`device = "cuda"` のconfigを使う場合は、CUDA環境を自動で読む `scripts/run_one.sh` 経由で実行する。
+
+```bash
+bash scripts/run_one.sh configs/ja_auto.toml
+```
+
 別configを指定して実行。
 
 ```bash
-python transcribe_m4a.py --config configs/ja_auto.toml
-python transcribe_m4a.py --config configs/ja_specification.toml
-python transcribe_m4a.py --config configs/en_auto.toml
-python transcribe_m4a.py --config configs/en_specification.toml
+bash scripts/run_one.sh configs/ja_auto.toml
+bash scripts/run_one.sh configs/ja_specification.toml
+bash scripts/run_one.sh configs/en_auto.toml
+bash scripts/run_one.sh configs/en_specification.toml
 ```
 
 ---
@@ -66,6 +88,32 @@ query/dml/
 docs/
 configs/
 scripts/
+```
+
+### CUDA環境確認
+
+`requirements-cuda.txt` を入れた端末で確認する。
+
+```bash
+bash scripts/cuda_env.sh
+```
+
+CPU実行だけならこの確認は不要。
+
+### config指定で1件実行
+
+```bash
+bash scripts/run_one.sh configs/ja_auto.toml
+```
+
+`run_one.sh` はconfig内の `device` を見る。
+
+```text
+device = "cpu"
+  CUDA環境を読まずに実行する
+
+device = "cuda"
+  scripts/cuda_env.sh をsourceしてから実行する
 ```
 
 ### 4条件まとめて実行
@@ -432,35 +480,6 @@ ls -ltr log | tail
 
 ```bash
 tail -n 80 log/*.log
-```
-
----
-
-## CUDA確認
-
-ロード確認。
-
-```bash
-python - <<'PY'
-import ctypes
-
-for lib in [
-    "libcublas.so.12",
-    "libcublasLt.so.12",
-    "libcudnn.so.9",
-    "libcudart.so.12",
-]:
-    ctypes.CDLL(lib)
-    print("OK", lib)
-PY
-```
-
-`LD_LIBRARY_PATH` を一時的に通す。
-
-```bash
-SITE_PACKAGES=$(python -c 'import site; print(site.getsitepackages()[0])')
-
-export LD_LIBRARY_PATH="$SITE_PACKAGES/nvidia/cublas/lib:$SITE_PACKAGES/nvidia/cudnn/lib:$SITE_PACKAGES/nvidia/cuda_runtime/lib:$LD_LIBRARY_PATH"
 ```
 
 ---
