@@ -13,15 +13,21 @@ stats_dir = "stats"
 db_file = "transcribe_runs.sqlite3"
 
 # 実験識別
-experiment_name = "l0opback_lang_compare"
+experiment_name = "example"
 run_label = "example_run"
 
 # ja / en / unknown
 source_language = "unknown"
 
+# CPUでも動く安全側の初期値
 model = "medium"
-device = "cuda"
-compute_type = "float16"
+device = "cpu"
+compute_type = "int8"
+
+# GPU/CUDAを使う場合の例:
+# model = "large-v3"
+# device = "cuda"
+# compute_type = "float16"
 
 # auto / ja / en
 language = "auto"
