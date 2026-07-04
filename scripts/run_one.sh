@@ -24,7 +24,18 @@ if [ ! -f "$CONFIG" ]; then
   exit 1
 fi
 
-DEVICE="$(awk -F= '/^[[:space:]]*device[[:space:]]*=/{gsub(/[ \"'\''\t]/, "", $2); print $2; exit}' "$CONFIG")"
+DEVICE="$(python - "$CONFIG" <<'PY'
+from pathlib import Path
+import sys
+import tomllib
+
+config_path = Path(sys.argv[1])
+with config_path.open("rb") as f:
+    config = tomllib.load(f)
+
+print(str(config.get("device", "")).strip())
+PY
+)"
 
 if [ "$DEVICE" = "cuda" ]; then
   echo "[INFO] device=cuda; loading CUDA environment"
