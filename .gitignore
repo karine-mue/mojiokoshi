@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# venv
+.venv/
+venv/
+.env
+
+# ASR input / output / logs
+data/*
+output/*
+log/*
+
+# keep directories
+!data/.gitkeep
+!output/.gitkeep
+!log/.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
