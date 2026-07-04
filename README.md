@@ -26,29 +26,20 @@ pip install -U pip
 pip install -r requirements.txt
 ```
 
-CUDAライブラリにPATHを通す。
+CPU実行だけならここまででよい。
+
+GPU/CUDAを使う端末だけ、追加で入れる。
 
 ```bash
-SITE_PACKAGES=$(python -c 'import site; print(site.getsitepackages()[0])')
-
-export LD_LIBRARY_PATH="$SITE_PACKAGES/nvidia/cublas/lib:$SITE_PACKAGES/nvidia/cudnn/lib:$SITE_PACKAGES/nvidia/cuda_runtime/lib:$LD_LIBRARY_PATH"
+pip install -r requirements-cuda.txt
 ```
 
-ロード確認。
+CUDAライブラリは、`device = "cuda"` のconfigを `scripts/run_one.sh` / `scripts/run_all.sh` から実行した時だけ読み込む。CPU実行時はCUDA環境を読まない。
+
+CUDAロード確認。
 
 ```bash
-python - <<'PY'
-import ctypes
-
-for lib in [
-    "libcublas.so.12",
-    "libcublasLt.so.12",
-    "libcudnn.so.9",
-    "libcudart.so.12",
-]:
-    ctypes.CDLL(lib)
-    print("OK", lib)
-PY
+bash scripts/cuda_env.sh
 ```
 
 ---
@@ -61,10 +52,10 @@ PY
 cp config.example.toml config.toml
 ```
 
-最小例。
+`config.example.toml` はCPUでも動く安全側の初期値。
 
 ```toml
-audio_file = "l0opback_ja.m4a"
+audio_file = ""
 
 data_dir = "data"
 output_dir = "output"
@@ -72,18 +63,26 @@ log_dir = "log"
 stats_dir = "stats"
 db_file = "transcribe_runs.sqlite3"
 
-experiment_name = "l0opback_lang_compare"
-run_label = "ja_auto"
-source_language = "ja"
+experiment_name = "example"
+run_label = "example_run"
+source_language = "unknown"
 
 model = "medium"
-device = "cuda"
-compute_type = "float16"
+device = "cpu"
+compute_type = "int8"
 
 language = "auto"
 
 beam_size = 5
 vad_filter = true
+```
+
+GPU/CUDAを使う場合は、config側で明示する。
+
+```toml
+model = "large-v3"
+device = "cuda"
+compute_type = "float16"
 ```
 
 各パラメータの詳細は [`docs/config.md`](docs/config.md) を参照。
@@ -95,10 +94,10 @@ vad_filter = true
 複数条件を回す場合は `configs/` に設定ファイルを分けて置く。
 
 ```bash
-python transcribe_m4a.py --config configs/ja_auto.toml
-python transcribe_m4a.py --config configs/ja_specification.toml
-python transcribe_m4a.py --config configs/en_auto.toml
-python transcribe_m4a.py --config configs/en_specification.toml
+bash scripts/run_one.sh configs/ja_auto.toml
+bash scripts/run_one.sh configs/ja_specification.toml
+bash scripts/run_one.sh configs/en_auto.toml
+bash scripts/run_one.sh configs/en_specification.toml
 ```
 
 `config.toml` は手元作業用。  
@@ -113,6 +112,12 @@ python transcribe_m4a.py --config configs/en_specification.toml
 ```bash
 source .venv/bin/activate
 python transcribe_m4a.py
+```
+
+`device = "cuda"` のconfigを使う場合は、CUDA環境を自動で読む `scripts/run_one.sh` 経由で実行する。
+
+```bash
+bash scripts/run_one.sh configs/ja_auto.toml
 ```
 
 結果確認。
@@ -149,6 +154,7 @@ mojiokoshi/
   .gitignore
   README.md
   requirements.txt
+  requirements-cuda.txt
 
   configs/
     ja_auto.toml
@@ -185,6 +191,8 @@ mojiokoshi/
 
   scripts/
     init_dirs.sh
+    cuda_env.sh
+    run_one.sh
     run_all.sh
     check.sh
     compare.sh
@@ -244,6 +252,7 @@ Gitに載せるもの。
 ```text
 transcribe_m4a.py
 requirements.txt
+requirements-cuda.txt
 config.example.toml
 .gitignore
 README.md
