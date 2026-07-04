@@ -3,6 +3,8 @@ select
   coalesce(is_deleted, 0) as is_deleted,
   deleted_at,
   delete_reason,
+  status,
+  error_message,
   run_id,
   run_user,
   run_host,
