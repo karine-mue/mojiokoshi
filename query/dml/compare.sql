@@ -11,6 +11,7 @@ select
   count(*) as run_count
 from transcribe_runs
 where coalesce(is_deleted, 0) = 0
+  and coalesce(status, 'success') = 'success'
 group by
   experiment_name,
   source_language,
