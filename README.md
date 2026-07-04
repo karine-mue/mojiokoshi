@@ -7,6 +7,8 @@
 実行ログは `log/{run_id}.log` に出す。  
 実行結果の統計は `stats/transcribe_runs.sqlite3` に記録する。
 
+実行台帳には `run_id`, `run_user`, `run_host`, config、音声ファイル、出力先、ログパス、処理時間、検出言語などを記録する。
+
 ---
 
 ## 最短セットアップ
@@ -21,13 +23,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 pip install -U pip
-pip install faster-whisper
-```
-
-CUDAで使う場合。
-
-```bash
-pip install -U nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12
+pip install -r requirements.txt
 ```
 
 CUDAライブラリにPATHを通す。
@@ -103,8 +99,10 @@ python transcribe_m4a.py --config configs/ja_auto.toml
 python transcribe_m4a.py --config configs/ja_specification.toml
 python transcribe_m4a.py --config configs/en_auto.toml
 python transcribe_m4a.py --config configs/en_specification.toml
-
 ```
+
+`config.toml` は手元作業用。  
+`configs/*.toml` は再実行可能な実験条件としてGitに載せる。
 
 ---
 
@@ -127,7 +125,6 @@ sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/check.sql
 
 ```bash
 bash scripts/run_all.sh
-
 ```
 
 ### 結果確認
@@ -135,6 +132,7 @@ bash scripts/run_all.sh
 ```bash
 bash scripts/check.sh
 bash scripts/compare.sh
+bash scripts/compare_model.sh
 ```
 
 コマンド集は [`docs/commands.md`](docs/commands.md) を参照。
@@ -182,6 +180,7 @@ mojiokoshi/
     dml/
       check.sql
       compare.sql
+      compare_model.sql
       check_all.sql
 
   scripts/
@@ -189,6 +188,7 @@ mojiokoshi/
     run_all.sh
     check.sh
     compare.sh
+    compare_model.sh
     check_all.sh
     soft_delete.sh
     restore_run.sh
@@ -198,7 +198,6 @@ mojiokoshi/
     config.md
     commands.md
     sqlite.md
-
 ```
 
 ---
@@ -244,11 +243,14 @@ Gitに載せるもの。
 
 ```text
 transcribe_m4a.py
+requirements.txt
 config.example.toml
 .gitignore
 README.md
 docs/**/*.md
 query/**/*.sql
+configs/*.toml
+scripts/*.sh
 data/.gitkeep
 output/.gitkeep
 log/.gitkeep
@@ -294,3 +296,4 @@ log/{run_id}.log
 
 - [`docs/config.md`](docs/config.md): `config.toml` のパラメータ説明
 - [`docs/commands.md`](docs/commands.md): 実行、確認、diff、論理削除、Git確認のコマンド集
+- [`docs/sqlite.md`](docs/sqlite.md): SQLite実行台帳のテーブル定義
