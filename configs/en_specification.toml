@@ -1,0 +1,25 @@
+# 入力音声ファイル
+audio_file = "l0opback_en.m4a"
+
+data_dir = "data"
+output_dir = "output"
+log_dir = "log"
+stats_dir = "stats"
+db_file = "transcribe_runs.sqlite3"
+
+# 実験識別
+experiment_name = "l0opback_lang_compare"
+run_label = "en_specification"
+
+# ja / en / unknown
+source_language = "en"
+
+model = "medium"
+device = "cuda"
+compute_type = "float16"
+
+# auto / ja / en
+language = "en"
+
+beam_size = 5
+vad_filter = true

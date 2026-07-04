@@ -12,10 +12,14 @@ __pycache__/
 venv/
 .env
 
-# local config
+# local default config
 config.toml
 config_*.toml
 !config.example.toml
+
+# named experiment configs are tracked
+!configs/
+!configs/*.toml
 
 # ASR input / output / logs
 data/*
