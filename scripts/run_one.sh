@@ -24,18 +24,7 @@ if [ ! -f "$CONFIG" ]; then
   exit 1
 fi
 
-DEVICE="$(python - "$CONFIG" <<'PY'
-from pathlib import Path
-import sys
-import tomllib
-
-config_path = Path(sys.argv[1])
-with config_path.open("rb") as f:
-    config = tomllib.load(f)
-
-print(str(config.get("device", "")).strip())
-PY
-)"
+DEVICE="$(python scripts/get_config_device.py "$CONFIG")"
 
 if [ "$DEVICE" = "cuda" ]; then
   echo "[INFO] device=cuda; loading CUDA environment"
@@ -47,4 +36,8 @@ else
   echo "[WARN] device is not set to cpu/cuda in $CONFIG; running without CUDA environment"
 fi
 
-python transcribe_m4a.py --config "$CONFIG"
+python transcribe_m4a.py --config "$CONFIG" || {
+  STATUS="$?"
+  python scripts/record_failed_run.py "$CONFIG" "$STATUS" || true
+  exit "$STATUS"
+}
