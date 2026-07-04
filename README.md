@@ -94,7 +94,23 @@ vad_filter = true
 
 ---
 
+## 複数config
+
+複数条件を回す場合は `configs/` に設定ファイルを分けて置く。
+
+```bash
+python transcribe_m4a.py --config configs/ja_auto.toml
+python transcribe_m4a.py --config configs/ja_specification.toml
+python transcribe_m4a.py --config configs/en_auto.toml
+python transcribe_m4a.py --config configs/en_specification.toml
+
+```
+
+---
+
 ## 最短実行
+
+### 単発実行
 
 ```bash
 source .venv/bin/activate
@@ -105,6 +121,20 @@ python transcribe_m4a.py
 
 ```bash
 sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/check.sql
+```
+
+### 複数条件をまとめて実行
+
+```bash
+bash scripts/run_all.sh
+
+```
+
+### 結果確認
+
+```bash
+bash scripts/check.sh
+bash scripts/compare.sh
 ```
 
 コマンド集は [`docs/commands.md`](docs/commands.md) を参照。
@@ -120,6 +150,12 @@ mojiokoshi/
   config.example.toml
   .gitignore
   README.md
+
+  configs/
+    ja_auto.toml
+    ja_specification.toml
+    en_auto.toml
+    en_specification.toml
 
   data/
     .gitkeep
@@ -147,9 +183,21 @@ mojiokoshi/
       compare.sql
       check_all.sql
 
+  scripts/
+    init_dirs.sh
+    run_all.sh
+    check.sh
+    compare.sh
+    check_all.sh
+    soft_delete.sh
+    restore_run.sh
+    diff_latest.sh
+
   docs/
     config.md
     commands.md
+    sqlite.md
+
 ```
 
 ---

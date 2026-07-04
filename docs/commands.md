@@ -323,3 +323,173 @@ mv output/2026* output/bk/ 2>/dev/null || true
 mkdir -p data output log stats query/dml docs
 touch data/.gitkeep output/.gitkeep log/.gitkeep stats/.gitkeep
 ```
+
+---
+
+## scripts
+
+`scripts/` には、よく使う操作をまとめたshellを置く。
+
+初回またはzip展開後に実行権限を付ける。
+
+```bash
+chmod +x scripts/*.sh
+
+```
+
+### directory初期化
+
+```bash
+bash scripts/init_dirs.sh
+
+```
+
+作成するもの。
+
+```text
+data/
+output/
+log/
+stats/
+query/dml/
+docs/
+configs/
+scripts/
+```
+---
+
+### 4条件まとめて実行
+
+```bash
+
+bash scripts/run_all.sh
+
+```
+
+実行するconfig。
+
+```text
+
+configs/ja_auto.toml
+configs/ja_specification.toml
+configs/en_auto.toml
+configs/en_specification.toml
+
+```
+
+実行後に`check.sql`と`compare.sql`も表示する。
+
+---
+
+### 一覧確認
+
+``` bash
+
+bash scripts/check.sh
+
+```
+
+中身。
+
+```bash
+
+sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/check.sql
+
+```
+
+---
+
+### 比較集計
+
+```bash
+bash scripts/compare.sh
+
+```
+
+中身。
+
+```bash
+sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/compare.sql
+
+```
+
+---
+
+### 論理削除済も含めて確認
+
+```bash
+
+bash scripts/check_all.sh
+
+```
+
+中身。
+
+```bash
+
+sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/check_all.sql
+
+```
+
+---
+
+### 論理削除
+
+DB上でrunを除外する。出力ファイルやログは消さない。
+
+DBの`id`で指定する例。
+
+```bash
+bash scripts/soft_delete.sh 1 misrun
+
+```
+
+`run_id`で指定する例。
+
+```bash
+bash scripts/soft_delete.sh 20260704_214356_ja_specification_l0opback_ja misrun
+
+```
+
+---
+
+### 論理削除を戻す
+
+DBの`id`で戻す例。
+
+```bash
+bash scripts/restore_run.sh 1
+
+```
+
+`run_id`で戻す例。
+
+```bash
+bash scripts/restore_run.sh 20260704_214356_ja_specification_l0opback_ja
+```
+
+---
+
+### 最新run同士のdiff
+
+```bash
+bash scripts/diff_latest.sh
+```
+
+比較する組み合わせ。
+
+```text
+ja_specification vs ja_auto
+en_specification vs en_auto
+```
+
+出力先。
+
+```text
+output/diff/{timestamp}_ja_specification_vs_ja_auto.diff
+output/diff/{timestamp}_en_specification_vs_en_auto.diff
+```
+
+diffが空なら、出力本文は同一。
+
+

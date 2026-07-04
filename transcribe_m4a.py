@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import logging
 import re
 import shutil
+import socket
 import sqlite3
 import sys
 import time
@@ -165,6 +167,8 @@ def init_db(db_path: Path) -> None:
     required_columns: dict[str, str] = {
         "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
         "run_id": "TEXT",
+        "run_user": "TEXT",
+        "run_host": "TEXT",
         "run_started_at": "TEXT",
         "run_finished_at": "TEXT",
         "elapsed_sec": "REAL",
@@ -208,6 +212,8 @@ def init_db(db_path: Path) -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
 
                 run_id TEXT,
+                run_user TEXT,
+                run_host TEXT,
 
                 run_started_at TEXT,
                 run_finished_at TEXT,
@@ -247,7 +253,11 @@ def init_db(db_path: Path) -> None:
                 log_path TEXT,
 
                 status TEXT,
-                error_message TEXT
+                error_message TEXT,
+
+                is_deleted INTEGER NOT NULL DEFAULT 0,
+                deleted_at TEXT,
+                delete_reason TEXT
             )
             """
         )
@@ -287,11 +297,27 @@ def init_db(db_path: Path) -> None:
             """
         )
 
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_transcribe_runs_user_host
+            ON transcribe_runs (run_user, run_host)
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_transcribe_runs_deleted
+            ON transcribe_runs (is_deleted)
+            """
+        )
+
 
 def insert_run_stat(
     *,
     db_path: Path,
     run_id: str,
+    run_user: str,
+    run_host: str,
     run_started_at: str,
     run_finished_at: str,
     elapsed_sec: float,
@@ -328,11 +354,50 @@ def insert_run_stat(
         else None
     )
 
+    params = {
+        "run_id": run_id,
+        "run_user": run_user,
+        "run_host": run_host,
+        "run_started_at": run_started_at,
+        "run_finished_at": run_finished_at,
+        "elapsed_sec": elapsed_sec,
+        "experiment_name": experiment_name,
+        "run_label": run_label,
+        "config_path": str(config_path),
+        "config_snapshot": str(config_snapshot) if config_snapshot else None,
+        "audio_path": str(audio_path),
+        "audio_file": audio_path.name,
+        "audio_stem": audio_path.stem,
+        "audio_size_bytes": audio_size_bytes,
+        "audio_mtime": audio_mtime,
+        "source_language": source_language,
+        "model": model_size,
+        "device": device,
+        "compute_type": compute_type,
+        "language_arg": language_arg,
+        "detected_language": detected_language,
+        "language_probability": language_probability,
+        "duration_sec": duration_sec,
+        "segment_count": segment_count,
+        "transcript_chars": transcript_chars,
+        "vad_filter": int(vad_filter),
+        "beam_size": beam_size,
+        "output_dir": str(run_output_dir) if run_output_dir else None,
+        "output_txt": str(txt_path) if txt_path else None,
+        "output_srt": str(srt_path) if srt_path else None,
+        "output_json": str(json_path) if json_path else None,
+        "log_path": str(log_path) if log_path else None,
+        "status": status,
+        "error_message": error_message,
+    }
+
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             """
             INSERT INTO transcribe_runs (
                 run_id,
+                run_user,
+                run_host,
 
                 run_started_at,
                 run_finished_at,
@@ -374,51 +439,53 @@ def insert_run_stat(
                 status,
                 error_message
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (
+                :run_id,
+                :run_user,
+                :run_host,
+
+                :run_started_at,
+                :run_finished_at,
+                :elapsed_sec,
+
+                :experiment_name,
+                :run_label,
+
+                :config_path,
+                :config_snapshot,
+
+                :audio_path,
+                :audio_file,
+                :audio_stem,
+                :audio_size_bytes,
+                :audio_mtime,
+                :source_language,
+
+                :model,
+                :device,
+                :compute_type,
+                :language_arg,
+                :detected_language,
+                :language_probability,
+
+                :duration_sec,
+                :segment_count,
+                :transcript_chars,
+
+                :vad_filter,
+                :beam_size,
+
+                :output_dir,
+                :output_txt,
+                :output_srt,
+                :output_json,
+                :log_path,
+
+                :status,
+                :error_message
+            )
             """,
-            (
-                run_id,
-
-                run_started_at,
-                run_finished_at,
-                elapsed_sec,
-
-                experiment_name,
-                run_label,
-
-                str(config_path),
-                str(config_snapshot) if config_snapshot else None,
-
-                str(audio_path),
-                audio_path.name,
-                audio_path.stem,
-                audio_size_bytes,
-                audio_mtime,
-                source_language,
-
-                model_size,
-                device,
-                compute_type,
-                language_arg,
-                detected_language,
-                language_probability,
-
-                duration_sec,
-                segment_count,
-                transcript_chars,
-
-                int(vad_filter),
-                beam_size,
-
-                str(run_output_dir) if run_output_dir else None,
-                str(txt_path) if txt_path else None,
-                str(srt_path) if srt_path else None,
-                str(json_path) if json_path else None,
-                str(log_path) if log_path else None,
-
-                status,
-                error_message,
-            ),
+            params,
         )
 
 
@@ -550,6 +617,9 @@ def main() -> None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_id = make_run_id(timestamp, run_label, audio_path.stem)
 
+        run_user = getpass.getuser()
+        run_host = socket.gethostname()
+
         run_output_dir = output_dir / run_id
         run_output_dir.mkdir(exist_ok=False)
 
@@ -579,6 +649,8 @@ def main() -> None:
         vad_filter = bool(config.get("vad_filter", True))
 
         logger.info("run_id      : %s", run_id)
+        logger.info("run_user    : %s", run_user)
+        logger.info("run_host    : %s", run_host)
         logger.info("config      : %s", config_path)
         logger.info("config_snap : %s", config_snapshot_path)
         logger.info("project_root: %s", project_root)
@@ -647,6 +719,8 @@ def main() -> None:
         insert_run_stat(
             db_path=db_path,
             run_id=run_id,
+            run_user=run_user,
+            run_host=run_host,
             run_started_at=run_started_at,
             run_finished_at=run_finished_at,
             elapsed_sec=elapsed_sec,

@@ -1,10 +1,11 @@
--- 論理削除済も含めて見る
 select
   id,
-  is_deleted,
+  coalesce(is_deleted, 0) as is_deleted,
   deleted_at,
   delete_reason,
   run_id,
+  run_user,
+  run_host,
   run_label,
   audio_file,
   source_language,

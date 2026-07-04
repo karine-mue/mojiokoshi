@@ -1,6 +1,8 @@
 select
   id,
   run_id,
+  run_user,
+  run_host,
   run_label,
   audio_file,
   source_language,
