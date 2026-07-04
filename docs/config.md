@@ -9,8 +9,10 @@
 
 ## 全体例
 
+CPUでも動く安全側の例。
+
 ```toml
-audio_file = "l0opback_ja.m4a"
+audio_file = ""
 
 data_dir = "data"
 output_dir = "output"
@@ -18,19 +20,46 @@ log_dir = "log"
 stats_dir = "stats"
 db_file = "transcribe_runs.sqlite3"
 
-experiment_name = "l0opback_lang_compare"
-run_label = "ja_auto"
-source_language = "ja"
+experiment_name = "example"
+run_label = "example_run"
+source_language = "unknown"
 
 model = "medium"
-device = "cuda"
-compute_type = "float16"
+device = "cpu"
+compute_type = "int8"
 
 language = "auto"
 
 beam_size = 5
 vad_filter = true
 ```
+
+GPU/CUDAを使う場合の例。
+
+```toml
+model = "large-v3"
+device = "cuda"
+compute_type = "float16"
+```
+
+---
+
+## installとの対応
+
+CPU実行だけなら基本requirementsで足りる。
+
+```bash
+pip install -r requirements.txt
+```
+
+GPU/CUDAを使う端末だけ追加で入れる。
+
+```bash
+pip install -r requirements-cuda.txt
+```
+
+`device = "cpu"` の時はCUDA環境を読まない。  
+`device = "cuda"` の時だけ、`scripts/run_one.sh` / `scripts/run_all.sh` が `scripts/cuda_env.sh` を読み込む。
 
 ---
 
@@ -90,8 +119,8 @@ YYYYMMDD_HHMMSS_{run_label}_{audio_stem}
 | parameter | example | description |
 |---|---|---|
 | `model` | `"medium"` | Whisperモデルのサイズ。大きいほど認識精度は上がりやすいが、処理時間・VRAM使用量も増える。 |
-| `device` | `"cuda"` | 実行デバイス。GPUなら `cuda`、CPUなら `cpu`。 |
-| `compute_type` | `"float16"` | 計算時の数値形式。GPUでは `float16`、CPUでは `int8` が使いやすい。空文字にすると `device` に応じて自動設定する。 |
+| `device` | `"cpu"` | 実行デバイス。CPUなら `cpu`、GPUなら `cuda`。 |
+| `compute_type` | `"int8"` | 計算時の数値形式。CPUでは `int8`、GPUでは `float16` が使いやすい。空文字にすると `device` に応じて自動設定する。 |
 
 モデル例。
 
@@ -109,18 +138,18 @@ model = "large-v3"
 | `medium` | 中間 | 高速な一次起こし用。 |
 | `large-v3` | 重い | 固有名詞や崩れた箇所を詰める比較用。 |
 
-GPU実行例。
-
-```toml
-device = "cuda"
-compute_type = "float16"
-```
-
 CPU実行例。
 
 ```toml
 device = "cpu"
 compute_type = "int8"
+```
+
+GPU実行例。
+
+```toml
+device = "cuda"
+compute_type = "float16"
 ```
 
 自動設定に任せる例。
@@ -278,20 +307,20 @@ vad_filter = false
 
 現在の4条件。
 
-| file | audio_file | source_language | language | model | experiment_name |
-|---|---|---|---|---|---|
-| `configs/ja_auto.toml` | `l0opback_ja.m4a` | `ja` | `auto` | `large-v3` | `l0opback_lang_compare_LargeV3` |
-| `configs/ja_specification.toml` | `l0opback_ja.m4a` | `ja` | `ja` | `large-v3` | `l0opback_lang_compare_LargeV3` |
-| `configs/en_auto.toml` | `l0opback_en.m4a` | `en` | `auto` | `large-v3` | `l0opback_lang_compare_LargeV3` |
-| `configs/en_specification.toml` | `l0opback_en.m4a` | `en` | `en` | `large-v3` | `l0opback_lang_compare_LargeV3` |
+| file | audio_file | source_language | language | model | device | experiment_name |
+|---|---|---|---|---|---|---|
+| `configs/ja_auto.toml` | `l0opback_ja.m4a` | `ja` | `auto` | `large-v3` | `cuda` | `l0opback_lang_compare_LargeV3` |
+| `configs/ja_specification.toml` | `l0opback_ja.m4a` | `ja` | `ja` | `large-v3` | `cuda` | `l0opback_lang_compare_LargeV3` |
+| `configs/en_auto.toml` | `l0opback_en.m4a` | `en` | `auto` | `large-v3` | `cuda` | `l0opback_lang_compare_LargeV3` |
+| `configs/en_specification.toml` | `l0opback_en.m4a` | `en` | `en` | `large-v3` | `cuda` | `l0opback_lang_compare_LargeV3` |
 
 実行。
 
 ```bash
-python transcribe_m4a.py --config configs/ja_auto.toml
-python transcribe_m4a.py --config configs/ja_specification.toml
-python transcribe_m4a.py --config configs/en_auto.toml
-python transcribe_m4a.py --config configs/en_specification.toml
+bash scripts/run_one.sh configs/ja_auto.toml
+bash scripts/run_one.sh configs/ja_specification.toml
+bash scripts/run_one.sh configs/en_auto.toml
+bash scripts/run_one.sh configs/en_specification.toml
 ```
 
 まとめて実行。
@@ -382,6 +411,13 @@ CPUで逃がす時。
 ```toml
 device = "cpu"
 compute_type = "int8"
+```
+
+GPUで回す時。
+
+```toml
+device = "cuda"
+compute_type = "float16"
 ```
 
 言語判定が怪しい時。
