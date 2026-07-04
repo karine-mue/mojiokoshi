@@ -2,6 +2,9 @@
 
 `config.toml` は、どの音声を、どのモデル・言語・実験条件で文字起こしするかを決める設定ファイル。
 
+`config.toml` は手元作業用としてGitに載せない。  
+再実行可能な実験条件は `configs/*.toml` としてGitに載せる。
+
 ---
 
 ## 全体例
@@ -103,7 +106,7 @@ model = "large-v3"
 | model | speed | note |
 |---|---|---|
 | `small` | 速い | 試し打ち用。 |
-| `medium` | 中間 | NotebookLM音声の通常run用。 |
+| `medium` | 中間 | 高速な一次起こし用。 |
 | `large-v3` | 重い | 固有名詞や崩れた箇所を詰める比較用。 |
 
 GPU実行例。
@@ -147,8 +150,7 @@ device = "cpu"  -> compute_type = "int8"
 language = "auto"
 ```
 
-`auto` は音声から言語を自動判定する。  
-NotebookLM音声のように冒頭からその言語で話し始めるファイルでは安定しやすい。
+`auto` は音声から言語を自動判定する。
 
 ```toml
 language = "ja"
@@ -167,6 +169,7 @@ language = "en"
 ```text
 language = "auto"
   言語判定が外れると、全文がその影響を受ける。
+  large-v3英語では、auto条件でループ/文脈落ちが出る場合がある。
 
 language = "ja" / "en"
   音声の言語が分かっている場合は条件固定しやすい。
@@ -269,7 +272,37 @@ vad_filter = false
 
 ---
 
-## 4条件比較の設定例
+## tracked configs
+
+`configs/*.toml` は再実行可能な実験条件としてGitに載せる。
+
+現在の4条件。
+
+| file | audio_file | source_language | language | model | experiment_name |
+|---|---|---|---|---|---|
+| `configs/ja_auto.toml` | `l0opback_ja.m4a` | `ja` | `auto` | `large-v3` | `l0opback_lang_compare_LargeV3` |
+| `configs/ja_specification.toml` | `l0opback_ja.m4a` | `ja` | `ja` | `large-v3` | `l0opback_lang_compare_LargeV3` |
+| `configs/en_auto.toml` | `l0opback_en.m4a` | `en` | `auto` | `large-v3` | `l0opback_lang_compare_LargeV3` |
+| `configs/en_specification.toml` | `l0opback_en.m4a` | `en` | `en` | `large-v3` | `l0opback_lang_compare_LargeV3` |
+
+実行。
+
+```bash
+python transcribe_m4a.py --config configs/ja_auto.toml
+python transcribe_m4a.py --config configs/ja_specification.toml
+python transcribe_m4a.py --config configs/en_auto.toml
+python transcribe_m4a.py --config configs/en_specification.toml
+```
+
+まとめて実行。
+
+```bash
+bash scripts/run_all.sh
+```
+
+---
+
+## 4条件比較の考え方
 
 日本語音声 × 言語auto。
 
@@ -307,17 +340,17 @@ source_language = "en"
 language = "en"
 ```
 
-この4条件で比較する場合、以下は固定する。
+言語指定あり/なしだけを比較する場合、以下は固定する。
 
 ```toml
-model = "medium"
+model = "large-v3"
 device = "cuda"
 compute_type = "float16"
 beam_size = 5
 vad_filter = true
 ```
 
-こうすると、差分の主因を `language` の違いに寄せられる。
+model比較もする場合は、`model = "medium"` と `model = "large-v3"` を別の `experiment_name` または別のconfigとして分ける。
 
 ---
 
@@ -336,6 +369,12 @@ language = "auto"
 
 ```toml
 model = "large-v3"
+```
+
+高速に一次起こしする時。
+
+```toml
+model = "medium"
 ```
 
 CPUで逃がす時。
