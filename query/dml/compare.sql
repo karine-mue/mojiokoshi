@@ -9,6 +9,7 @@ select
   count(*) as run_count
 from transcribe_runs
 where experiment_name = 'l0opback_lang_compare'
+  and coalesce(is_deleted, 0) = 0
 group by
   source_language,
   language_arg,

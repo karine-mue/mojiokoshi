@@ -196,6 +196,9 @@ def init_db(db_path: Path) -> None:
         "log_path": "TEXT",
         "status": "TEXT",
         "error_message": "TEXT",
+        "is_deleted": "INTEGER NOT NULL DEFAULT 0",
+        "deleted_at": "TEXT",
+        "delete_reason": "TEXT",
     }
 
     with sqlite3.connect(db_path) as conn:

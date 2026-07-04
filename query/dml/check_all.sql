@@ -1,5 +1,9 @@
+-- 論理削除済も含めて見る
 select
   id,
+  is_deleted,
+  deleted_at,
+  delete_reason,
   run_id,
   run_label,
   audio_file,
@@ -13,5 +17,4 @@ select
   transcript_chars,
   output_dir
 from transcribe_runs
-where coalesce(is_deleted, 0) = 0
 order by id;
