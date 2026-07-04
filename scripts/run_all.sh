@@ -6,11 +6,6 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
-if [ -f ".venv/bin/activate" ]; then
-  # shellcheck disable=SC1091
-  source ".venv/bin/activate"
-fi
-
 CONFIGS=(
   "configs/ja_auto.toml"
   "configs/ja_specification.toml"
@@ -30,7 +25,7 @@ for config in "${CONFIGS[@]}"; do
   echo "============================================================"
   echo "RUN: $config"
   echo "============================================================"
-  python transcribe_m4a.py --config "$config"
+  bash scripts/run_one.sh "$config"
 done
 
 echo
