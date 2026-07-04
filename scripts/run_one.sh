@@ -8,6 +8,7 @@ if [ "$#" -ne 1 ]; then
 fi
 
 CONFIG="$1"
+RUN_ONE_STARTED_AT="$(date +%s)"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -16,7 +17,7 @@ cd "$PROJECT_ROOT"
 
 if [ -f ".venv/bin/activate" ]; then
   # shellcheck disable=SC1091
-  source ".venv/bin/activate"
+  . ".venv/bin/activate"
 fi
 
 if [ ! -f "$CONFIG" ]; then
@@ -29,7 +30,7 @@ DEVICE="$(python scripts/get_config_device.py "$CONFIG")"
 if [ "$DEVICE" = "cuda" ]; then
   echo "[INFO] device=cuda; loading CUDA environment"
   # shellcheck disable=SC1091
-  source "scripts/cuda_env.sh"
+  . "scripts/cuda_env.sh"
 elif [ "$DEVICE" = "cpu" ]; then
   echo "[INFO] device=cpu; skipping CUDA environment"
 else
@@ -38,6 +39,6 @@ fi
 
 python transcribe_m4a.py --config "$CONFIG" || {
   STATUS="$?"
-  python scripts/record_failed_run.py "$CONFIG" "$STATUS" || true
+  python scripts/record_failed_run.py "$CONFIG" "$STATUS" "$RUN_ONE_STARTED_AT" "transcribe" || true
   exit "$STATUS"
 }
