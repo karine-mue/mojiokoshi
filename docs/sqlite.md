@@ -21,8 +21,8 @@ transcribe_runs
 |---|---|---:|---|
 | `id` | `INTEGER` | no | SQLite内部の連番ID。`PRIMARY KEY AUTOINCREMENT`。 |
 | `run_id` | `TEXT` | yes | run単位の人間向けID。形式は `YYYYMMDD_HHMMSS_{run_label}_{audio_stem}`。 |
-| `run_user` | `TEXT` | yes | 実行OSユーザ。例: `{user_name}`。 |
-| `run_host` | `TEXT` | yes | 実行ホスト名。例: `{host_name}`。 |
+| `run_user` | `TEXT` | yes | 実行OSユーザ。 |
+| `run_host` | `TEXT` | yes | 実行ホスト名。 |
 | `run_started_at` | `TEXT` | yes | 実行開始日時。Python側の `datetime.now().isoformat(timespec="seconds")`。 |
 | `run_finished_at` | `TEXT` | yes | 実行終了日時。Python側の `datetime.now().isoformat(timespec="seconds")`。 |
 | `elapsed_sec` | `REAL` | yes | 実行にかかった秒数。`time.monotonic()` の差分。 |
@@ -341,6 +341,7 @@ order by id;
 
 ```sql
 select
+  experiment_name,
   source_language,
   language_arg,
   detected_language,
@@ -350,16 +351,48 @@ select
   round(avg(transcript_chars), 1) as avg_chars,
   count(*) as run_count
 from transcribe_runs
-where experiment_name = 'l0opback_lang_compare'
-  and coalesce(is_deleted, 0) = 0
+where coalesce(is_deleted, 0) = 0
 group by
+  experiment_name,
   source_language,
   language_arg,
   detected_language
 order by
+  experiment_name,
   source_language,
   language_arg,
   detected_language;
+```
+
+model比較集計。
+
+```sql
+select
+  experiment_name,
+  source_language,
+  model,
+  language_arg,
+  detected_language,
+  round(avg(language_probability), 4) as avg_lang_prob,
+  round(avg(duration_sec), 2) as avg_duration,
+  round(avg(elapsed_sec), 2) as avg_elapsed,
+  round(avg(duration_sec / elapsed_sec), 2) as realtime_factor,
+  round(avg(segment_count), 1) as avg_segments,
+  round(avg(transcript_chars), 1) as avg_chars,
+  count(*) as run_count
+from transcribe_runs
+where coalesce(is_deleted, 0) = 0
+group by
+  experiment_name,
+  source_language,
+  model,
+  language_arg,
+  detected_language
+order by
+  experiment_name,
+  source_language,
+  model,
+  language_arg;
 ```
 
 実行ユーザ別に見る。
