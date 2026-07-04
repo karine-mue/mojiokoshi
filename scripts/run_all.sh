@@ -44,3 +44,9 @@ echo "============================================================"
 echo "COMPARE"
 echo "============================================================"
 sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/compare.sql
+
+echo
+echo "============================================================"
+echo "COMPARE_MODEL"
+echo "============================================================"
+sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/compare_model.sql

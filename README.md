@@ -150,6 +150,7 @@ mojiokoshi/
   config.example.toml
   .gitignore
   README.md
+  requirements.txt
 
   configs/
     ja_auto.toml

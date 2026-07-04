@@ -415,6 +415,22 @@ sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/compare.sql
 
 ---
 
+### model比較集計
+
+```bash
+bash scripts/compare_model.sh
+
+```
+
+中身。
+
+```bash
+sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/compare_model.sql
+
+```
+
+---
+
 ### 論理削除済も含めて確認
 
 ```bash

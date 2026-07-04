@@ -8,13 +8,13 @@ stats_dir = "stats"
 db_file = "transcribe_runs.sqlite3"
 
 # 実験識別
-experiment_name = "l0opback_lang_compare"
+experiment_name = "l0opback_lang_compare_LargeV3"
 run_label = "en_auto"
 
 # ja / en / unknown
 source_language = "en"
 
-model = "medium"
+model = "large-v3"
 device = "cuda"
 compute_type = "float16"
 
