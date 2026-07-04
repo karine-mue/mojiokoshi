@@ -13,7 +13,9 @@ select
   round(elapsed_sec, 2) as elapsed,
   segment_count,
   transcript_chars,
+  status,
   output_dir
 from transcribe_runs
 where coalesce(is_deleted, 0) = 0
+  and coalesce(status, 'success') = 'success'
 order by id;
