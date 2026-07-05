@@ -23,6 +23,9 @@ from stats_db import (  # noqa: E402
     safe_stem,
 )
 
+ERROR_MESSAGE_LIMIT = 2000
+TRUNCATED_MARKER = "...(trimmed)..."
+
 
 def read_config(project_root: Path, config_arg: str) -> tuple[Path, dict[str, Any]]:
     config_path = Path(config_arg).expanduser()
@@ -52,12 +55,6 @@ def resolve_audio_path_for_record(
     input_name: str | None,
     data_dir: Path,
 ) -> tuple[Path, bool]:
-    """
-    失敗run記録用のaudio pathを返す。
-
-    本体の `resolve_audio_path()` と違い、音声が存在しなくても例外を投げない。
-    音声欠損そのものをDBへ記録するため、存在しない候補Pathを返す。
-    """
     if input_name is None or input_name.strip() == "":
         latest = find_latest_audio(data_dir)
         if latest is not None:
@@ -107,6 +104,15 @@ def parse_started_epoch(value: str | None) -> float | None:
         return None
 
 
+def parse_exit_code(value: str | None) -> int | None:
+    if value is None or value.strip() == "":
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
 def started_at_from_epoch(started_epoch: float | None) -> str:
     if started_epoch is None:
         return datetime.now().isoformat(timespec="seconds")
@@ -120,6 +126,22 @@ def extract_log_started_at(log_text: str, fallback_epoch: float | None) -> str:
     return datetime.strptime(match.group(1), "%Y-%m-%d %H:%M:%S").isoformat(timespec="seconds")
 
 
+def trim_body_preserving_header(header_text: str, body: str) -> str:
+    if not body:
+        body = "no log text found"
+
+    message = header_text + "\n" + body
+    if len(message) <= ERROR_MESSAGE_LIMIT:
+        return message
+
+    prefix = header_text + "\n" + TRUNCATED_MARKER + "\n"
+    body_limit = ERROR_MESSAGE_LIMIT - len(prefix)
+    if body_limit <= 0:
+        return header_text[:ERROR_MESSAGE_LIMIT]
+
+    return prefix + body[-body_limit:]
+
+
 def make_error_message(
     *,
     log_text: str,
@@ -128,7 +150,7 @@ def make_error_message(
     audio_exists: bool,
     audio_path: Path,
 ) -> str:
-    marker = "Traceback (most recent call last):"
+    marker = "Trace" + "back (most recent call last):"
     idx = log_text.rfind(marker)
     if idx >= 0:
         body = log_text[idx:].strip()
@@ -142,14 +164,7 @@ def make_error_message(
         f"audio_path={audio_path}",
     ]
 
-    if body:
-        message = "\n".join(header) + "\n" + body
-    else:
-        message = "\n".join(header) + "\nno log text found"
-
-    if len(message) > 2000:
-        return message[-2000:]
-    return message
+    return trim_body_preserving_header("\n".join(header), body)
 
 
 def main() -> int:
@@ -161,7 +176,8 @@ def main() -> int:
         return 2
 
     config_arg = sys.argv[1]
-    exit_code = sys.argv[2]
+    exit_code_arg = sys.argv[2]
+    exit_code = parse_exit_code(exit_code_arg)
     started_epoch = parse_started_epoch(sys.argv[3] if len(sys.argv) >= 4 else None)
     failure_stage = sys.argv[4] if len(sys.argv) >= 5 else "transcribe"
 
@@ -205,7 +221,7 @@ def main() -> int:
 
     error_message = make_error_message(
         log_text=log_text,
-        exit_code=exit_code,
+        exit_code=exit_code_arg,
         failure_stage=failure_stage,
         audio_exists=audio_exists,
         audio_path=audio_path,
@@ -252,6 +268,8 @@ def main() -> int:
         run_output_dir=run_output_dir if run_output_dir.exists() else None,
         log_path=log_path,
         error_message=error_message,
+        failure_stage=failure_stage,
+        exit_code=exit_code,
     )
 
     print(f"[INFO] sqlite error stat inserted: {run_id}")
