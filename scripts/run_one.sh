@@ -8,7 +8,6 @@ if [ "$#" -ne 1 ]; then
 fi
 
 CONFIG="$1"
-RUN_ONE_STARTED_AT="$(date +%s)"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -25,7 +24,7 @@ if [ ! -f "$CONFIG" ]; then
   exit 1
 fi
 
-PYTHON_BIN="${PYTHON:-}"
+PYTHON_BIN="${PYTHON_BIN:-${PYTHON:-}}"
 if [ -z "$PYTHON_BIN" ]; then
   if command -v python3 >/dev/null 2>&1; then
     PYTHON_BIN="python3"
@@ -34,20 +33,4 @@ if [ -z "$PYTHON_BIN" ]; then
   fi
 fi
 
-DEVICE="$($PYTHON_BIN scripts/get_config_device.py "$CONFIG")"
-
-if [ "$DEVICE" = "cuda" ]; then
-  echo "[INFO] device=cuda; loading CUDA environment"
-  # shellcheck disable=SC1091
-  . "scripts/cuda_env.sh"
-elif [ "$DEVICE" = "cpu" ]; then
-  echo "[INFO] device=cpu; skipping CUDA environment"
-else
-  echo "[WARN] device is not set to cpu/cuda in $CONFIG; running without CUDA environment"
-fi
-
-"$PYTHON_BIN" transcribe_m4a.py --config "$CONFIG" || {
-  STATUS="$?"
-  "$PYTHON_BIN" scripts/record_failed_run.py "$CONFIG" "$STATUS" "$RUN_ONE_STARTED_AT" "transcribe" || true
-  exit "$STATUS"
-}
+exec "$PYTHON_BIN" run_one.py "$CONFIG"
