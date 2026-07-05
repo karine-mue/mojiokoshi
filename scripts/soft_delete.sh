@@ -16,7 +16,16 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
-python - "$TARGET" "$REASON" <<'PY'
+PYTHON_BIN="${PYTHON:-}"
+if [ -z "$PYTHON_BIN" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  else
+    PYTHON_BIN="python"
+  fi
+fi
+
+"$PYTHON_BIN" - "$TARGET" "$REASON" <<'PY'
 from __future__ import annotations
 
 import re
