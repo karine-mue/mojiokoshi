@@ -4,6 +4,8 @@ select
   deleted_at,
   delete_reason,
   status,
+  failure_stage,
+  exit_code,
   error_message,
   run_id,
   run_user,

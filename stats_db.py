@@ -47,6 +47,8 @@ COLUMN_DEFINITIONS: dict[str, str] = {
     "output_json": "TEXT",
     "log_path": "TEXT",
     "status": "TEXT",
+    "failure_stage": "TEXT",
+    "exit_code": "INTEGER",
     "error_message": "TEXT",
     "is_deleted": "INTEGER NOT NULL DEFAULT 0",
     "deleted_at": "TEXT",
@@ -185,6 +187,8 @@ def _audio_metadata(audio_path: Path, audio_exists: bool) -> tuple[int | None, s
 def _insert_stat_params(db_path: Path, params: dict[str, object]) -> None:
     params = dict(params)
     params.setdefault("app_version", APP_VERSION)
+    params.setdefault("failure_stage", None)
+    params.setdefault("exit_code", None)
 
     columns_sql = ",\n                ".join(RUN_STAT_COLUMNS)
     values_sql = ",\n                ".join(f":{column}" for column in RUN_STAT_COLUMNS)
@@ -308,6 +312,8 @@ def insert_error_stat(
     run_output_dir: Path | None,
     log_path: Path | None,
     error_message: str,
+    failure_stage: str | None,
+    exit_code: int | None,
 ) -> None:
     audio_size_bytes, audio_mtime = _audio_metadata(audio_path, audio_exists)
 
@@ -345,6 +351,8 @@ def insert_error_stat(
         "output_json": None,
         "log_path": _path_or_none(log_path),
         "status": "error",
+        "failure_stage": failure_stage,
+        "exit_code": exit_code,
         "error_message": error_message,
     }
 
