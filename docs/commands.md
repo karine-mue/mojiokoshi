@@ -151,11 +151,17 @@ query/dml/compare.sql
 query/dml/compare_model.sql
 ```
 
+`check.sql` は直近20件・新しい順。`run_all.sh` の末尾では、今回追加されたrunが上側に出る。
+
 ### 一覧確認
 
 ```bash
 bash scripts/check.sh
 ```
+
+直近20件を新しい順に表示する。
+
+N=20の根拠は、比較軸が model(2) × 言語(2) × auto/指定(2) の8条件で一周するため。20件あれば直近2周(16件)+失敗・再実行の余白が1画面に収まる。
 
 中身。
 
@@ -192,6 +198,8 @@ sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/compare_model.
 ```bash
 bash scripts/check_all.sh
 ```
+
+全件を表示する。`error_message` は表崩れを避けるため先頭80文字だけを1行化して表示する。
 
 中身。
 
@@ -255,7 +263,7 @@ diffが空なら、出力本文は同一。
 
 ## SQLite確認
 
-一覧。
+直近20件。
 
 ```bash
 sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/check.sql
@@ -282,33 +290,36 @@ sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/check_all.sql
 直接SQLを投げる例。
 
 ```bash
-sqlite3 -header -column stats/transcribe_runs.sqlite3 'select id, run_id, run_user, run_host, language_arg, detected_language, elapsed_sec from transcribe_runs order by id;'
+sqlite3 -header -column stats/transcribe_runs.sqlite3 'select id, run_id, run_user, run_host, language_arg, detected_language, elapsed_sec from transcribe_runs order by id desc limit 20;'
 ```
 
 ---
 
 ## query/dml/check.sql
 
+直近20件を新しい順に見るSQL。
+
 ```sql
 select
   id,
+  status,
+  failure_stage,
+  exit_code,
   run_id,
-  run_user,
-  run_host,
+  coalesce(app_version, 'pre-0.1') as app_version,
   run_label,
   audio_file,
   source_language,
   language_arg,
   detected_language,
   round(language_probability, 4) as lang_prob,
-  round(duration_sec, 2) as duration,
   round(elapsed_sec, 2) as elapsed,
   segment_count,
-  transcript_chars,
-  output_dir
+  transcript_chars
 from transcribe_runs
 where coalesce(is_deleted, 0) = 0
-order by id;
+order by id desc
+limit 20;
 ```
 
 ---
@@ -377,26 +388,31 @@ order by
 
 ## query/dml/check_all.sql
 
+全件を見るSQL。`error_message` は先頭80文字を1行化して表示する。
+
 ```sql
 select
   id,
   coalesce(is_deleted, 0) as is_deleted,
   deleted_at,
   delete_reason,
+  status,
+  failure_stage,
+  exit_code,
+  replace(replace(substr(coalesce(error_message, ''), 1, 80), char(10), ' '), char(13), ' ') as error_message,
   run_id,
   run_user,
   run_host,
+  coalesce(app_version, 'pre-0.1') as app_version,
   run_label,
   audio_file,
   source_language,
   language_arg,
   detected_language,
   round(language_probability, 4) as lang_prob,
-  round(duration_sec, 2) as duration,
   round(elapsed_sec, 2) as elapsed,
   segment_count,
-  transcript_chars,
-  output_dir
+  transcript_chars
 from transcribe_runs
 order by id;
 ```
