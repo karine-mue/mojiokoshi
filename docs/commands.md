@@ -38,17 +38,21 @@ pip install -r requirements-cuda.txt
 
 ## 実行
 
-通常実行。
-
-```bash
-python transcribe_m4a.py
-```
-
-`device = "cuda"` のconfigを使う場合は、CUDA環境を自動で読む `scripts/run_one.sh` 経由で実行する。
+CLI互換入口。
 
 ```bash
 bash scripts/run_one.sh configs/ja_auto.toml
 ```
+
+`scripts/run_one.sh` は `.venv/bin/activate` があれば自動でsourceし、`run_one.py` を起動する。
+
+Python入口を直接使う場合。
+
+```bash
+python run_one.py configs/ja_auto.toml
+```
+
+`device = "cuda"` のconfigを使う場合も、`run_one.py` がCUDA環境を準備してから `transcribe_m4a.py` を子プロセスとして起動する。
 
 別configを指定して実行。
 
@@ -57,6 +61,12 @@ bash scripts/run_one.sh configs/ja_auto.toml
 bash scripts/run_one.sh configs/ja_specification.toml
 bash scripts/run_one.sh configs/en_auto.toml
 bash scripts/run_one.sh configs/en_specification.toml
+```
+
+低レベル入口として `transcribe_m4a.py` を直接実行することもできる。ただし、CUDA環境準備や失敗run記録は `run_one.py` / `scripts/run_one.sh` 側の責務。
+
+```bash
+python transcribe_m4a.py
 ```
 
 ---
@@ -100,6 +110,8 @@ bash scripts/cuda_env.sh
 
 CPU実行だけならこの確認は不要。
 
+`scripts/cuda_env.sh` は手動確認・デバッグ用として当面残す。通常の1件実行では、`run_one.py` がCUDA用の環境変数をPython側で組み立て、子プロセスへ `env` として渡す。
+
 ### config指定で1件実行
 
 ```bash
@@ -113,7 +125,7 @@ device = "cpu"
   CUDA環境を読まずに実行する
 
 device = "cuda"
-  scripts/cuda_env.sh をsourceしてから実行する
+  Python orchestrationがCUDA環境を作り、子プロセスへenvとして渡す
 ```
 
 ### 4条件まとめて実行
@@ -405,19 +417,6 @@ bash scripts/soft_delete.sh 1 misrun
 
 ```bash
 bash scripts/restore_run.sh 1
-```
-
-手でSQLを投げる場合。
-
-```bash
-sqlite3 stats/transcribe_runs.sqlite3 <<'SQL'
-update transcribe_runs
-set
-  is_deleted = 1,
-  deleted_at = datetime('now', 'localtime'),
-  delete_reason = 'misrun'
-where id = 1;
-SQL
 ```
 
 ---

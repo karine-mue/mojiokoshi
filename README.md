@@ -55,7 +55,9 @@ GPU/CUDAを使う端末だけ、追加で入れる。
 pip install -r requirements-cuda.txt
 ```
 
-CUDAライブラリは、`device = "cuda"` のconfigを `scripts/run_one.sh` / `scripts/run_all.sh` から実行した時だけ読み込む。CPU実行時はCUDA環境を読まない。
+CUDAライブラリは、`device = "cuda"` のconfigを `scripts/run_one.sh` / `run_one.py` / `scripts/run_all.sh` から実行した時だけ読み込む。CPU実行時はCUDA環境を読まない。
+
+`run_one.py` はCUDA用の環境変数をPython側で組み立て、子プロセスへ `env` として渡す。`scripts/cuda_env.sh` は手動確認・デバッグ用として当面残す。
 
 CUDAロード確認。
 
@@ -130,16 +132,21 @@ bash scripts/run_one.sh configs/en_specification.toml
 
 ### 単発実行
 
-```bash
-source .venv/bin/activate
-python transcribe_m4a.py
-```
-
-`device = "cuda"` のconfigを使う場合は、CUDA環境を自動で読む `scripts/run_one.sh` 経由で実行する。
+CLI互換入口。
 
 ```bash
 bash scripts/run_one.sh configs/ja_auto.toml
 ```
+
+`scripts/run_one.sh` は `.venv/bin/activate` があれば自動でsourceし、`run_one.py` を起動する。
+
+Python入口を直接使う場合。
+
+```bash
+python run_one.py configs/ja_auto.toml
+```
+
+`device = "cuda"` のconfigを使う場合も、`run_one.py` がCUDA環境を準備してから `transcribe_m4a.py` を子プロセスとして起動する。
 
 結果確認。
 
@@ -170,6 +177,8 @@ bash scripts/compare_model.sh
 ```text
 mojiokoshi/
   transcribe_m4a.py
+  run_one.py
+  orchestration.py
   version.py
   config.toml
   config.example.toml
@@ -216,6 +225,7 @@ mojiokoshi/
   scripts/
     init_dirs.sh
     cuda_env.sh
+    check_cuda_runtime.py
     run_one.sh
     run_all.sh
     check.sh
@@ -275,6 +285,8 @@ Gitに載せるもの。
 
 ```text
 transcribe_m4a.py
+run_one.py
+orchestration.py
 version.py
 requirements.txt
 requirements-cuda.txt
@@ -287,6 +299,7 @@ docs/**/*.md
 query/**/*.sql
 configs/*.toml
 scripts/*.sh
+scripts/*.py
 data/.gitkeep
 output/.gitkeep
 log/.gitkeep
