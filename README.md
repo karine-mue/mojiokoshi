@@ -7,7 +7,28 @@
 実行ログは `log/{run_id}.log` に出す。  
 実行結果の統計は `stats/transcribe_runs.sqlite3` に記録する。
 
-実行台帳には `run_id`, `run_user`, `run_host`, config、音声ファイル、出力先、ログパス、処理時間、検出言語などを記録する。
+実行台帳には `run_id`, `run_user`, `run_host`, `app_version`, config、音声ファイル、出力先、ログパス、処理時間、検出言語などを記録する。
+
+---
+
+## 公開スタンス / License
+
+このツールの主目的は作者自身のローカル文字起こし・学習補助。
+
+外部公開する場合も、教育サービス・法人向け製品・サポート付きソフトウェアではなく、個人開発ツールをAS-ISで公開する位置づけとする。
+
+- mojiokoshi本体のlicenseは [`LICENSE`](LICENSE) を参照
+- third-party noticeは [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) を参照
+- 無保証
+- 自己責任
+- 原則サポートなし
+- 組織端末での実行可否は各組織のルールに従う
+- 未署名exe、EDR、AppLocker、WDAC、SmartScreen等による実行制限への対応保証はしない
+- NotebookLM等の外部サービスの出力品質や教育的妥当性は本ツールの責任範囲外
+
+versionは [`version.py`](version.py) の `__version__` を単一sourceとする。GitHub Releaseを作る場合は、`__version__ = "0.1.0"` と tag / release名 `v0.1.0` を一致させる。
+
+将来portable zipを作る場合も、初期方針ではCUDA DLLを同梱しない。GPU/CUDA利用者は自分の環境側でCUDAを用意する。
 
 ---
 
@@ -149,9 +170,12 @@ bash scripts/compare_model.sh
 ```text
 mojiokoshi/
   transcribe_m4a.py
+  version.py
   config.toml
   config.example.toml
   .gitignore
+  LICENSE
+  THIRD_PARTY_NOTICES.md
   README.md
   requirements.txt
   requirements-cuda.txt
@@ -251,10 +275,13 @@ Gitに載せるもの。
 
 ```text
 transcribe_m4a.py
+version.py
 requirements.txt
 requirements-cuda.txt
 config.example.toml
 .gitignore
+LICENSE
+THIRD_PARTY_NOTICES.md
 README.md
 docs/**/*.md
 query/**/*.sql

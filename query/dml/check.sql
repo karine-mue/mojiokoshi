@@ -3,6 +3,7 @@ select
   run_id,
   run_user,
   run_host,
+  coalesce(app_version, 'pre-0.1') as app_version,
   run_label,
   audio_file,
   source_language,
