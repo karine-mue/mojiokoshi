@@ -6,6 +6,8 @@ from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
+from version import __version__ as APP_VERSION
+
 
 AUDIO_EXTENSIONS = {".m4a", ".mp3", ".wav", ".flac", ".aac", ".ogg", ".opus"}
 
@@ -14,6 +16,7 @@ COLUMN_DEFINITIONS: dict[str, str] = {
     "run_id": "TEXT",
     "run_user": "TEXT",
     "run_host": "TEXT",
+    "app_version": "TEXT",
     "run_started_at": "TEXT",
     "run_finished_at": "TEXT",
     "elapsed_sec": "REAL",
@@ -148,7 +151,6 @@ def init_db(db_path: Path) -> None:
                     conn.execute(
                         f"ALTER TABLE transcribe_runs ADD COLUMN {column_name} {column_type}"
                     )
-
             for index_sql in INDEX_SQL:
                 conn.execute(index_sql)
 
@@ -181,6 +183,9 @@ def _audio_metadata(audio_path: Path, audio_exists: bool) -> tuple[int | None, s
 
 
 def _insert_stat_params(db_path: Path, params: dict[str, object]) -> None:
+    params = dict(params)
+    params.setdefault("app_version", APP_VERSION)
+
     columns_sql = ",\n                ".join(RUN_STAT_COLUMNS)
     values_sql = ",\n                ".join(f":{column}" for column in RUN_STAT_COLUMNS)
     missing = [column for column in RUN_STAT_COLUMNS if column not in params]
