@@ -55,6 +55,12 @@ def resolve_audio_path_for_record(
     input_name: str | None,
     data_dir: Path,
 ) -> tuple[Path, bool]:
+    """
+    失敗run記録用のaudio pathを返す。
+
+    本体の `resolve_audio_path()` と違い、音声が存在しなくても例外を投げない。
+    音声欠損そのものをDBへ記録するため、存在しない候補Pathを返す。
+    """
     if input_name is None or input_name.strip() == "":
         latest = find_latest_audio(data_dir)
         if latest is not None:
@@ -150,7 +156,7 @@ def make_error_message(
     audio_exists: bool,
     audio_path: Path,
 ) -> str:
-    marker = "Trace" + "back (most recent call last):"
+    marker = "Traceback (most recent call last):"
     idx = log_text.rfind(marker)
     if idx >= 0:
         body = log_text[idx:].strip()
