@@ -38,17 +38,21 @@ pip install -r requirements-cuda.txt
 
 ## 実行
 
-通常実行。
-
-```bash
-python transcribe_m4a.py
-```
-
-`device = "cuda"` のconfigを使う場合は、CUDA環境を自動で読む `scripts/run_one.sh` 経由で実行する。
+CLI互換入口。
 
 ```bash
 bash scripts/run_one.sh configs/ja_auto.toml
 ```
+
+`scripts/run_one.sh` は `.venv/bin/activate` があれば自動でsourceし、`run_one.py` を起動する。
+
+Python入口を直接使う場合。
+
+```bash
+python run_one.py configs/ja_auto.toml
+```
+
+`device = "cuda"` のconfigを使う場合も、`run_one.py` がCUDA環境を準備してから `transcribe_m4a.py` を子プロセスとして起動する。
 
 別configを指定して実行。
 
@@ -57,6 +61,12 @@ bash scripts/run_one.sh configs/ja_auto.toml
 bash scripts/run_one.sh configs/ja_specification.toml
 bash scripts/run_one.sh configs/en_auto.toml
 bash scripts/run_one.sh configs/en_specification.toml
+```
+
+低レベル入口として `transcribe_m4a.py` を直接実行することもできる。ただし、CUDA環境準備や失敗run記録は `run_one.py` / `scripts/run_one.sh` 側の責務。
+
+```bash
+python transcribe_m4a.py
 ```
 
 ---
@@ -100,6 +110,8 @@ bash scripts/cuda_env.sh
 
 CPU実行だけならこの確認は不要。
 
+`scripts/cuda_env.sh` は手動確認・デバッグ用として当面残す。通常の1件実行では、`run_one.py` がCUDA用の環境変数をPython側で組み立て、子プロセスへ `env` として渡す。
+
 ### config指定で1件実行
 
 ```bash
@@ -113,7 +125,7 @@ device = "cpu"
   CUDA環境を読まずに実行する
 
 device = "cuda"
-  scripts/cuda_env.sh をsourceしてから実行する
+  Python orchestrationがCUDA環境を作り、子プロセスへenvとして渡す
 ```
 
 ### 4条件まとめて実行
@@ -243,151 +255,38 @@ diffが空なら、出力本文は同一。
 
 ## SQLite確認
 
-一覧。
+一覧、比較集計、model比較集計、論理削除済み確認は `query/dml/*.sql` を使う。
 
 ```bash
 sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/check.sql
-```
-
-比較集計。
-
-```bash
 sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/compare.sql
-```
-
-model比較集計。
-
-```bash
 sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/compare_model.sql
-```
-
-論理削除済みも含めて確認。
-
-```bash
 sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/check_all.sql
-```
-
-直接SQLを投げる例。
-
-```bash
-sqlite3 -header -column stats/transcribe_runs.sqlite3 'select id, run_id, run_user, run_host, language_arg, detected_language, elapsed_sec from transcribe_runs order by id;'
 ```
 
 ---
 
 ## query/dml/check.sql
 
-```sql
-select
-  id,
-  run_id,
-  run_user,
-  run_host,
-  run_label,
-  audio_file,
-  source_language,
-  language_arg,
-  detected_language,
-  round(language_probability, 4) as lang_prob,
-  round(duration_sec, 2) as duration,
-  round(elapsed_sec, 2) as elapsed,
-  segment_count,
-  transcript_chars,
-  output_dir
-from transcribe_runs
-where coalesce(is_deleted, 0) = 0
-order by id;
-```
+有効run一覧を見るSQL。
 
 ---
 
 ## query/dml/compare.sql
 
-```sql
-select
-  experiment_name,
-  source_language,
-  language_arg,
-  detected_language,
-  round(avg(language_probability), 4) as avg_lang_prob,
-  round(avg(elapsed_sec), 2) as avg_elapsed,
-  round(avg(segment_count), 1) as avg_segments,
-  round(avg(transcript_chars), 1) as avg_chars,
-  count(*) as run_count
-from transcribe_runs
-where coalesce(is_deleted, 0) = 0
-group by
-  experiment_name,
-  source_language,
-  language_arg,
-  detected_language
-order by
-  experiment_name,
-  source_language,
-  language_arg,
-  detected_language;
-```
+実験名、元言語、言語指定、検出言語ごとの比較集計SQL。
 
 ---
 
 ## query/dml/compare_model.sql
 
-```sql
-select
-  experiment_name,
-  source_language,
-  model,
-  language_arg,
-  detected_language,
-  round(avg(language_probability), 4) as avg_lang_prob,
-  round(avg(duration_sec), 2) as avg_duration,
-  round(avg(elapsed_sec), 2) as avg_elapsed,
-  round(avg(duration_sec / elapsed_sec), 2) as realtime_factor,
-  round(avg(segment_count), 1) as avg_segments,
-  round(avg(transcript_chars), 1) as avg_chars,
-  count(*) as run_count
-from transcribe_runs
-where coalesce(is_deleted, 0) = 0
-group by
-  experiment_name,
-  source_language,
-  model,
-  language_arg,
-  detected_language
-order by
-  experiment_name,
-  source_language,
-  model,
-  language_arg;
-```
+モデル別の処理時間、realtime factor、出力量を見る比較集計SQL。
 
 ---
 
 ## query/dml/check_all.sql
 
-```sql
-select
-  id,
-  coalesce(is_deleted, 0) as is_deleted,
-  deleted_at,
-  delete_reason,
-  run_id,
-  run_user,
-  run_host,
-  run_label,
-  audio_file,
-  source_language,
-  language_arg,
-  detected_language,
-  round(language_probability, 4) as lang_prob,
-  round(duration_sec, 2) as duration,
-  round(elapsed_sec, 2) as elapsed,
-  segment_count,
-  transcript_chars,
-  output_dir
-from transcribe_runs
-order by id;
-```
+論理削除済みrunや失敗runも含めて見るSQL。
 
 ---
 
@@ -405,19 +304,6 @@ bash scripts/soft_delete.sh 1 misrun
 
 ```bash
 bash scripts/restore_run.sh 1
-```
-
-手でSQLを投げる場合。
-
-```bash
-sqlite3 stats/transcribe_runs.sqlite3 <<'SQL'
-update transcribe_runs
-set
-  is_deleted = 1,
-  deleted_at = datetime('now', 'localtime'),
-  delete_reason = 'misrun'
-where id = 1;
-SQL
 ```
 
 ---
@@ -501,6 +387,7 @@ output/.gitkeep
 stats/.gitkeep
 configs/*.toml
 scripts/*.sh
+scripts/*.py
 docs/*.md
 query/**/*.sql
 ```
