@@ -31,8 +31,22 @@ import re
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Iterable
 
 DB_PATH = Path("stats/transcribe_runs.sqlite3")
+
+
+def print_rows(headers: list[str], rows: Iterable[tuple]) -> None:
+    rows = [tuple("" if value is None else str(value) for value in row) for row in rows]
+    widths = [len(header) for header in headers]
+    for row in rows:
+        widths = [max(width, len(value)) for width, value in zip(widths, row)]
+
+    print("  ".join(header.ljust(width) for header, width in zip(headers, widths)))
+    print("  ".join("-" * width for width in widths))
+    for row in rows:
+        print("  ".join(value.ljust(width) for value, width in zip(row, widths)))
+
 
 target = sys.argv[1]
 
@@ -62,7 +76,19 @@ with sqlite3.connect(DB_PATH) as conn:
 
     if cursor.rowcount == 0:
         print(f"[WARN] no matching run: {target}", file=sys.stderr)
-PY
 
-sqlite3 -header -column stats/transcribe_runs.sqlite3 \
-'select id, run_id, coalesce(is_deleted, 0) as is_deleted, deleted_at, delete_reason from transcribe_runs order by id;'
+    rows = conn.execute(
+        """
+        select
+          id,
+          run_id,
+          coalesce(is_deleted, 0) as is_deleted,
+          deleted_at,
+          delete_reason
+        from transcribe_runs
+        order by id
+        """
+    ).fetchall()
+
+print_rows(["id", "run_id", "is_deleted", "deleted_at", "delete_reason"], rows)
+PY
