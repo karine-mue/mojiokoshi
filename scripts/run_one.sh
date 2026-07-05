@@ -25,7 +25,16 @@ if [ ! -f "$CONFIG" ]; then
   exit 1
 fi
 
-DEVICE="$(python scripts/get_config_device.py "$CONFIG")"
+PYTHON_BIN="${PYTHON:-}"
+if [ -z "$PYTHON_BIN" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  else
+    PYTHON_BIN="python"
+  fi
+fi
+
+DEVICE="$($PYTHON_BIN scripts/get_config_device.py "$CONFIG")"
 
 if [ "$DEVICE" = "cuda" ]; then
   echo "[INFO] device=cuda; loading CUDA environment"
@@ -37,8 +46,8 @@ else
   echo "[WARN] device is not set to cpu/cuda in $CONFIG; running without CUDA environment"
 fi
 
-python transcribe_m4a.py --config "$CONFIG" || {
+"$PYTHON_BIN" transcribe_m4a.py --config "$CONFIG" || {
   STATUS="$?"
-  python scripts/record_failed_run.py "$CONFIG" "$STATUS" "$RUN_ONE_STARTED_AT" "transcribe" || true
+  "$PYTHON_BIN" scripts/record_failed_run.py "$CONFIG" "$STATUS" "$RUN_ONE_STARTED_AT" "transcribe" || true
   exit "$STATUS"
 }

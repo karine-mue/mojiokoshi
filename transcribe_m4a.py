@@ -4,10 +4,8 @@ import argparse
 import getpass
 import json
 import logging
-import re
 import shutil
 import socket
-import sqlite3
 import sys
 import time
 import tomllib
@@ -15,21 +13,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
-from faster_whisper import WhisperModel
-
-
-AUDIO_EXTENSIONS = {".m4a", ".mp3", ".wav", ".flac", ".aac", ".ogg", ".opus"}
-
-
-def safe_stem(name: str) -> str:
-    """
-    Windows/WSLでファイル名にしにくい文字を軽く置換する。
-    日本語はそのまま残す。
-    """
-    name = name.strip()
-    name = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "_", name)
-    name = re.sub(r"\s+", "_", name)
-    return name or "unknown"
+from stats_db import (
+    AUDIO_EXTENSIONS,
+    init_db,
+    insert_run_stat,
+    make_run_id,
+    resolve_project_path,
+)
 
 
 def format_timestamp_srt(seconds: float) -> str:
@@ -52,13 +42,6 @@ def load_config(config_path: Path) -> dict[str, Any]:
 
     with config_path.open("rb") as f:
         return tomllib.load(f)
-
-
-def resolve_project_path(project_root: Path, value: str | Path) -> Path:
-    path = Path(value).expanduser()
-    if path.is_absolute():
-        return path
-    return project_root / path
 
 
 def find_latest_audio(data_dir: Path) -> Path:
@@ -143,350 +126,12 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError(f"source_language must be ja, en, or unknown: {source_language}")
 
     beam_size = config.get("beam_size", 5)
-    if not isinstance(beam_size, int) or beam_size < 1:
+    if isinstance(beam_size, bool) or not isinstance(beam_size, int) or beam_size < 1:
         raise ValueError(f"beam_size must be positive integer: {beam_size}")
 
     vad_filter = config.get("vad_filter", True)
     if not isinstance(vad_filter, bool):
         raise ValueError(f"vad_filter must be true or false: {vad_filter}")
-
-
-def make_run_id(timestamp: str, run_label: str, audio_stem: str) -> str:
-    label = safe_stem(run_label) if run_label.strip() else "run"
-    stem = safe_stem(audio_stem)
-    return f"{timestamp}_{label}_{stem}"
-
-
-def init_db(db_path: Path) -> None:
-    """
-    stats用SQLiteを初期化する。
-    既存DBに列が足りない場合は追加する。
-    """
-    db_path.parent.mkdir(exist_ok=True)
-
-    required_columns: dict[str, str] = {
-        "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
-        "run_id": "TEXT",
-        "run_user": "TEXT",
-        "run_host": "TEXT",
-        "run_started_at": "TEXT",
-        "run_finished_at": "TEXT",
-        "elapsed_sec": "REAL",
-        "experiment_name": "TEXT",
-        "run_label": "TEXT",
-        "config_path": "TEXT",
-        "config_snapshot": "TEXT",
-        "audio_path": "TEXT",
-        "audio_file": "TEXT",
-        "audio_stem": "TEXT",
-        "audio_size_bytes": "INTEGER",
-        "audio_mtime": "TEXT",
-        "source_language": "TEXT",
-        "model": "TEXT",
-        "device": "TEXT",
-        "compute_type": "TEXT",
-        "language_arg": "TEXT",
-        "detected_language": "TEXT",
-        "language_probability": "REAL",
-        "duration_sec": "REAL",
-        "segment_count": "INTEGER",
-        "transcript_chars": "INTEGER",
-        "vad_filter": "INTEGER",
-        "beam_size": "INTEGER",
-        "output_dir": "TEXT",
-        "output_txt": "TEXT",
-        "output_srt": "TEXT",
-        "output_json": "TEXT",
-        "log_path": "TEXT",
-        "status": "TEXT",
-        "error_message": "TEXT",
-        "is_deleted": "INTEGER NOT NULL DEFAULT 0",
-        "deleted_at": "TEXT",
-        "delete_reason": "TEXT",
-    }
-
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS transcribe_runs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-                run_id TEXT,
-                run_user TEXT,
-                run_host TEXT,
-
-                run_started_at TEXT,
-                run_finished_at TEXT,
-                elapsed_sec REAL,
-
-                experiment_name TEXT,
-                run_label TEXT,
-
-                config_path TEXT,
-                config_snapshot TEXT,
-
-                audio_path TEXT,
-                audio_file TEXT,
-                audio_stem TEXT,
-                audio_size_bytes INTEGER,
-                audio_mtime TEXT,
-                source_language TEXT,
-
-                model TEXT,
-                device TEXT,
-                compute_type TEXT,
-                language_arg TEXT,
-                detected_language TEXT,
-                language_probability REAL,
-
-                duration_sec REAL,
-                segment_count INTEGER,
-                transcript_chars INTEGER,
-
-                vad_filter INTEGER,
-                beam_size INTEGER,
-
-                output_dir TEXT,
-                output_txt TEXT,
-                output_srt TEXT,
-                output_json TEXT,
-                log_path TEXT,
-
-                status TEXT,
-                error_message TEXT,
-
-                is_deleted INTEGER NOT NULL DEFAULT 0,
-                deleted_at TEXT,
-                delete_reason TEXT
-            )
-            """
-        )
-
-        existing_columns = {
-            row[1]
-            for row in conn.execute("PRAGMA table_info(transcribe_runs)").fetchall()
-        }
-
-        for column_name, column_type in required_columns.items():
-            if column_name == "id":
-                continue
-            if column_name not in existing_columns:
-                conn.execute(
-                    f"ALTER TABLE transcribe_runs ADD COLUMN {column_name} {column_type}"
-                )
-
-        conn.execute(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_transcribe_runs_run_id
-            ON transcribe_runs (run_id)
-            WHERE run_id IS NOT NULL
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_transcribe_runs_experiment
-            ON transcribe_runs (experiment_name, run_label)
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_transcribe_runs_audio_language
-            ON transcribe_runs (audio_file, source_language, language_arg)
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_transcribe_runs_user_host
-            ON transcribe_runs (run_user, run_host)
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_transcribe_runs_deleted
-            ON transcribe_runs (is_deleted)
-            """
-        )
-
-
-def insert_run_stat(
-    *,
-    db_path: Path,
-    run_id: str,
-    run_user: str,
-    run_host: str,
-    run_started_at: str,
-    run_finished_at: str,
-    elapsed_sec: float,
-    experiment_name: str,
-    run_label: str,
-    config_path: Path,
-    config_snapshot: Path | None,
-    audio_path: Path,
-    source_language: str,
-    model_size: str,
-    device: str,
-    compute_type: str,
-    language_arg: str,
-    detected_language: str | None,
-    language_probability: float | None,
-    duration_sec: float | None,
-    segment_count: int | None,
-    transcript_chars: int | None,
-    vad_filter: bool,
-    beam_size: int,
-    run_output_dir: Path | None,
-    txt_path: Path | None,
-    srt_path: Path | None,
-    json_path: Path | None,
-    log_path: Path | None,
-    status: str,
-    error_message: str | None,
-) -> None:
-    stat = audio_path.stat() if audio_path.exists() else None
-    audio_size_bytes = stat.st_size if stat else None
-    audio_mtime = (
-        datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds")
-        if stat
-        else None
-    )
-
-    params = {
-        "run_id": run_id,
-        "run_user": run_user,
-        "run_host": run_host,
-        "run_started_at": run_started_at,
-        "run_finished_at": run_finished_at,
-        "elapsed_sec": elapsed_sec,
-        "experiment_name": experiment_name,
-        "run_label": run_label,
-        "config_path": str(config_path),
-        "config_snapshot": str(config_snapshot) if config_snapshot else None,
-        "audio_path": str(audio_path),
-        "audio_file": audio_path.name,
-        "audio_stem": audio_path.stem,
-        "audio_size_bytes": audio_size_bytes,
-        "audio_mtime": audio_mtime,
-        "source_language": source_language,
-        "model": model_size,
-        "device": device,
-        "compute_type": compute_type,
-        "language_arg": language_arg,
-        "detected_language": detected_language,
-        "language_probability": language_probability,
-        "duration_sec": duration_sec,
-        "segment_count": segment_count,
-        "transcript_chars": transcript_chars,
-        "vad_filter": int(vad_filter),
-        "beam_size": beam_size,
-        "output_dir": str(run_output_dir) if run_output_dir else None,
-        "output_txt": str(txt_path) if txt_path else None,
-        "output_srt": str(srt_path) if srt_path else None,
-        "output_json": str(json_path) if json_path else None,
-        "log_path": str(log_path) if log_path else None,
-        "status": status,
-        "error_message": error_message,
-    }
-
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO transcribe_runs (
-                run_id,
-                run_user,
-                run_host,
-
-                run_started_at,
-                run_finished_at,
-                elapsed_sec,
-
-                experiment_name,
-                run_label,
-
-                config_path,
-                config_snapshot,
-
-                audio_path,
-                audio_file,
-                audio_stem,
-                audio_size_bytes,
-                audio_mtime,
-                source_language,
-
-                model,
-                device,
-                compute_type,
-                language_arg,
-                detected_language,
-                language_probability,
-
-                duration_sec,
-                segment_count,
-                transcript_chars,
-
-                vad_filter,
-                beam_size,
-
-                output_dir,
-                output_txt,
-                output_srt,
-                output_json,
-                log_path,
-
-                status,
-                error_message
-            )
-            VALUES (
-                :run_id,
-                :run_user,
-                :run_host,
-
-                :run_started_at,
-                :run_finished_at,
-                :elapsed_sec,
-
-                :experiment_name,
-                :run_label,
-
-                :config_path,
-                :config_snapshot,
-
-                :audio_path,
-                :audio_file,
-                :audio_stem,
-                :audio_size_bytes,
-                :audio_mtime,
-                :source_language,
-
-                :model,
-                :device,
-                :compute_type,
-                :language_arg,
-                :detected_language,
-                :language_probability,
-
-                :duration_sec,
-                :segment_count,
-                :transcript_chars,
-
-                :vad_filter,
-                :beam_size,
-
-                :output_dir,
-                :output_txt,
-                :output_srt,
-                :output_json,
-                :log_path,
-
-                :status,
-                :error_message
-            )
-            """,
-            params,
-        )
 
 
 def write_outputs(
@@ -602,10 +247,10 @@ def main() -> None:
         log_dir = resolve_project_path(project_root, config.get("log_dir", "log"))
         stats_dir = resolve_project_path(project_root, config.get("stats_dir", "stats"))
 
-        data_dir.mkdir(exist_ok=True)
-        output_dir.mkdir(exist_ok=True)
-        log_dir.mkdir(exist_ok=True)
-        stats_dir.mkdir(exist_ok=True)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stats_dir.mkdir(parents=True, exist_ok=True)
 
         audio_name = config.get("audio_file", "")
         audio_path = resolve_audio_path(audio_name, data_dir)
@@ -621,7 +266,7 @@ def main() -> None:
         run_host = socket.gethostname()
 
         run_output_dir = output_dir / run_id
-        run_output_dir.mkdir(exist_ok=False)
+        run_output_dir.mkdir(parents=True, exist_ok=False)
 
         log_path = log_dir / f"{run_id}.log"
         logger = setup_logger(log_path)
@@ -670,6 +315,8 @@ def main() -> None:
         logger.info("stats_db    : %s", db_path)
 
         logger.info("loading model...")
+        from faster_whisper import WhisperModel
+
         model = WhisperModel(
             model_size,
             device=device,

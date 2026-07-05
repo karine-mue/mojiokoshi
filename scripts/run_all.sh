@@ -32,16 +32,16 @@ echo
 echo "============================================================"
 echo "CHECK"
 echo "============================================================"
-sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/check.sql
+bash scripts/check.sh
 
 echo
 echo "============================================================"
 echo "COMPARE"
 echo "============================================================"
-sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/compare.sql
+bash scripts/compare.sh
 
 echo
 echo "============================================================"
 echo "COMPARE_MODEL"
 echo "============================================================"
-sqlite3 -header -column stats/transcribe_runs.sqlite3 < query/dml/compare_model.sql
+bash scripts/compare_model.sh
