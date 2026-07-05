@@ -1,8 +1,9 @@
 select
   id,
+  status,
+  failure_stage,
+  exit_code,
   run_id,
-  run_user,
-  run_host,
   coalesce(app_version, 'pre-0.1') as app_version,
   run_label,
   audio_file,
@@ -10,13 +11,10 @@ select
   language_arg,
   detected_language,
   round(language_probability, 4) as lang_prob,
-  round(duration_sec, 2) as duration,
   round(elapsed_sec, 2) as elapsed,
   segment_count,
-  transcript_chars,
-  status,
-  output_dir
+  transcript_chars
 from transcribe_runs
 where coalesce(is_deleted, 0) = 0
-  and coalesce(status, 'success') = 'success'
-order by id;
+order by id desc
+limit 20;

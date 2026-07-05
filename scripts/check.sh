@@ -22,4 +22,5 @@ if ! command -v sqlite3 >/dev/null 2>&1; then
   exit 1
 fi
 
+echo "CHECK RECENT: latest 20 runs, newest first"
 sqlite3 -header -column "$DB" < query/dml/check.sql
