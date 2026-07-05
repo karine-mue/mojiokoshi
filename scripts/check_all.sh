@@ -22,4 +22,5 @@ if ! command -v sqlite3 >/dev/null 2>&1; then
   exit 1
 fi
 
+echo "CHECK ALL: all runs, error_message shortened to 80 chars"
 sqlite3 -header -column "$DB" < query/dml/check_all.sql
