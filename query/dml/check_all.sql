@@ -6,7 +6,7 @@ select
   status,
   failure_stage,
   exit_code,
-  error_message,
+  replace(replace(substr(coalesce(error_message, ''), 1, 80), char(10), ' '), char(13), ' ') as error_message,
   run_id,
   run_user,
   run_host,
@@ -17,10 +17,8 @@ select
   language_arg,
   detected_language,
   round(language_probability, 4) as lang_prob,
-  round(duration_sec, 2) as duration,
   round(elapsed_sec, 2) as elapsed,
   segment_count,
-  transcript_chars,
-  output_dir
+  transcript_chars
 from transcribe_runs
 order by id;
