@@ -1,5 +1,5 @@
 # 入力音声ファイル
-audio_file = "l0opback_ja.m4a"
+audio_file = "tea_ja.m4a"
 
 data_dir = "data"
 output_dir = "output"
@@ -8,7 +8,7 @@ stats_dir = "stats"
 db_file = "transcribe_runs.sqlite3"
 
 # 実験識別
-experiment_name = "l0opback_lang_compare_LargeV3"
+experiment_name = "tea_lang_compare_LargeV3"
 run_label = "ja_specification"
 
 # ja / en / unknown

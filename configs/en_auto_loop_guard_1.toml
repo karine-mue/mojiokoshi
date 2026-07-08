@@ -1,0 +1,26 @@
+# 入力音声ファイル
+audio_file = "tea_en.m4a"
+
+data_dir = "data"
+output_dir = "output"
+log_dir = "log"
+stats_dir = "stats"
+db_file = "transcribe_runs.sqlite3"
+
+# 実験識別
+experiment_name = "tea_lang_compare_LargeV3"
+run_label = "en_auto"
+
+# ja / en / unknown
+source_language = "en"
+
+model = "large-v3"
+device = "cuda"
+compute_type = "float16"
+
+# auto / ja / en
+language = "auto"
+
+beam_size = 5
+vad_filter = true
+condition_on_previous_text = false
